@@ -1,9 +1,11 @@
 import { createFlexProvider } from './flexProvider.js';
+import { createDemoProvider } from './demoProvider.js';
 import { providerNotConfigured } from '../errors.js';
 
 /**
  * Provider registry. Add a new adapter here (it must implement `arrivalsWindow` and
  * `flightStatus` returning NormalizedFlight records) and select it with FLIGHT_DATA_PROVIDER.
+ * "demo" generates clearly labelled sample COK arrivals (flight numbers 9xxx) for demonstrations.
  *
  * Deliberately NOT included: the reverse-engineered flightstats.com web-app endpoints
  * (github.com/evilsaloon/flightstats-web-api). FlightStats' Terms of Use §2.1.2, §2.1.5 and
@@ -14,6 +16,7 @@ export function createProvider(cfg, deps) {
     const p = createFlexProvider(cfg, deps);
     return p.configured ? p : unconfigured('flightstats-flex', 'FLIGHTSTATS_APP_ID and FLIGHTSTATS_APP_KEY are not set.');
   }
+  if (cfg.provider === 'demo') return createDemoProvider(deps);
   if (cfg.provider === 'none' || !cfg.provider) return unconfigured('none', 'No flight-data provider is selected (FLIGHT_DATA_PROVIDER=none).');
   return unconfigured(cfg.provider, `Unknown provider "${cfg.provider}".`);
 }

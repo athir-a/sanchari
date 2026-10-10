@@ -73,6 +73,7 @@ export function FlightPanel({ trip, ride, onFlight, onProposeShift, busy }) {
     <div className="flight-panel stack-sm">
       <div className="verify-row">
         <h3><BadgeCheck size={16} aria-hidden style={{ display: 'inline', verticalAlign: '-3px' }} /> {flight.designator}</h3>
+        {flight.source === 'demo' && <Tag tone="accent">Demo data</Tag>}
         <Tag tone={flight.status === 'LANDED' ? 'brand' : flight.status === 'CANCELLED' || flight.status === 'DIVERTED' ? 'danger' : ''}>{STATUS_TEXT[flight.status] || 'Status unknown'}</Tag>
       </div>
       <dl>

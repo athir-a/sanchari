@@ -125,7 +125,7 @@ export function MemberList({ ride, now }) {
             <p>
               {m.flightDesignator ? `${m.flightDesignator} · ` : ''}
               {m.flightVerification === 'verified' && m.flightBestArrival
-                ? `${m.flightBestKind === 'actual' ? 'landed' : m.flightBestKind === 'estimated' ? 'est.' : 'sched.'} ${fmtAirportTime(m.flightBestArrival)} · verified`
+                ? `${m.flightBestKind === 'actual' ? 'landed' : m.flightBestKind === 'estimated' ? 'est.' : 'sched.'} ${fmtAirportTime(m.flightBestArrival)} · ${m.flightDemo ? 'demo data' : 'verified'}`
                 : `lands ${fmtAirportTime(m.arrivalTime)}${m.flightDesignator ? ' · unverified' : ' · own time'}`}
             </p>
           </div>

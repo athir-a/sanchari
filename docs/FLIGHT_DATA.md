@@ -110,6 +110,9 @@ The scheduled refresh concentrates provider calls on flights linked to active jo
 
 ## 7. Adding or switching providers
 
+**Demo provider** (`FLIGHT_DATA_PROVIDER=demo`). This generates 25 sample COK arrivals per day, with flight numbers in the 9xxx range so they can't be confused with real flights. Their status is computed from the current time (scheduled → in the air → landed, plus one cancelled and one diverted flight). The board, the flight checks and the ride page all label them **demo data**. Use it for demonstrations only.
+
+
 Implement an object with `id`, `label`, `configured`, `maxWindowHours`, and:
 
 - `arrivalsWindow({ airport, date, startHour, numHours })`

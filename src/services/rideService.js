@@ -51,6 +51,7 @@ function memberFlight(t) {
   return {
     flightDesignator: f.designator,
     flightVerification: f.verification,
+    flightDemo: f.source === 'demo',
     flightBestArrival: f.verification === 'verified' ? best.time : null,
     flightBestKind: f.verification === 'verified' ? best.basis : null,
   };

@@ -40,6 +40,11 @@ export function FreshnessBar({ data, loading }) {
           {loading && ' · refreshing…'}
         </span>
       </div>
+      {data.provider.isDemo && (
+        <Note tone="accent" role="note">
+          <strong>Demo data.</strong> These are generated sample arrivals (flight numbers 9xxx) for demonstrating Sanchari — not real Cochin flights. Connect a licensed provider for live data.
+        </Note>
+      )}
       {state === 'stale' && <Note tone="accent" role="alert"><strong>These times may be out of date.</strong> {data.notice || 'Sanchari couldn’t reach the flight-data provider and is showing the last data it received.'}</Note>}
       {!data.complete && state !== 'stale' && <Note tone="accent" role="alert">{data.notice}</Note>}
     </div>
@@ -67,7 +72,7 @@ export function ArrivalsBoardView({ state, filter, onFilter, onRefresh, onSelect
         <p style={{ marginTop: '0.5rem' }}>{error?.message}</p>
         <p style={{ marginTop: '0.5rem' }}>
           {notConnected
-            ? 'Sanchari only shows flights from a licensed data provider — it never fills this board with sample flights. You can still plan your ride by typing your flight and landing time; it will be marked unverified.'
+            ? 'Sanchari only shows flights from a licensed data provider — it never presents sample flights as real ones. You can still plan your ride by typing your flight and landing time; it will be marked unverified.'
             : 'You can retry, or plan your ride with your own landing time (marked unverified).'}
         </p>
         <div className="button-row" style={{ marginTop: '1.2rem' }}>

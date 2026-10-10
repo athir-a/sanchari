@@ -183,7 +183,7 @@ export default function MatchResults() {
             <h3>{trip.airportCode} → {trip.destinationName}</h3>
             <p className="small">
               {trip.flight?.verification === 'verified'
-                ? `${trip.flight.designator} (verified) · ${effectiveArrival(trip).basis} arrival ${fmtAirportTime(effectiveArrival(trip).time)} IST`
+                ? `${trip.flight.designator} (${trip.flight.source === 'demo' ? 'demo data' : 'verified'}) · ${effectiveArrival(trip).basis} arrival ${fmtAirportTime(effectiveArrival(trip).time)} IST`
                 : `${trip.flight ? `${trip.flight.designator} (unverified) · ` : ''}lands ${fmtDateTime(trip.arrivalTime)}`}
             </p>
             <p className="small">{trip.luggageCount} bags · {PREFERENCES[trip.preference].label} · up to {trip.maxDetourMinutes} min detour</p>

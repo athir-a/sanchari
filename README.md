@@ -25,6 +25,7 @@ Node 18+ required. With no `.env` file the app runs in **demo mode** straight aw
 Sanchari has a backend flight-data layer (`/api/flights/*`). It includes an arrivals board, flight verification for journeys, and matching on *likely-ready* times built from estimated and actual arrivals.
 
 - **Provider:** the Cirium FlightStats **Flex API** (licensed). Set `FLIGHT_DATA_PROVIDER=flightstats_flex`, `FLIGHTSTATS_APP_ID` and `FLIGHTSTATS_APP_KEY` on the server.
+- **For demos:** set `FLIGHT_DATA_PROVIDER=demo` to get clearly labelled sample arrivals (flight numbers 9xxx).
 - **Without keys:** the board says live data isn't connected. Passengers enter their own time, and those flights are marked *unverified*. No sample flights are ever shown as real.
 - **Not used:** the reverse-engineered flightstats.com web endpoints from `evilsaloon/flightstats-web-api`. They responded on 11 Oct 2026 with 90 real COK arrivals, but FlightStats' Terms of Use §2.1.2, §2.1.5 and §2.1.9 forbid this use.
 

@@ -33,7 +33,7 @@ export function createFlightService({ env = process.env, deps = {} } = {}) {
   const tracker = new FlightUpdateTracker();
   const health = { lastSuccessAt: null, lastFailureAt: null, lastErrorCode: null, consecutiveFailures: 0, requests: 0 };
 
-  const providerInfo = () => ({ id: provider.id, label: provider.label, configured: provider.configured });
+  const providerInfo = () => ({ id: provider.id, label: provider.label, configured: provider.configured, isDemo: !!provider.isDemo });
 
   async function guarded(fn) {
     health.requests += 1;

@@ -24,7 +24,7 @@ describe('ArrivalsBoardView', () => {
   it('explains when no provider is connected and shows no flights', () => {
     render(<ArrivalsBoardView {...props({ status: 'error', data: null, error: { code: 'provider_not_configured', message: 'Live flight data is not connected on this server.' } })} />);
     expect(screen.getByText('No verified flight data right now.')).toBeTruthy();
-    expect(screen.getByText(/never fills this board with sample flights/)).toBeTruthy();
+    expect(screen.getByText(/never presents sample flights as real/)).toBeTruthy();
     expect(screen.queryByRole('table')).toBeNull();
   });
 

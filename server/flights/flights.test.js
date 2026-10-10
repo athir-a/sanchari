@@ -306,3 +306,27 @@ describe('provider configuration', () => {
     expect(Object.fromEntries(u.searchParams)).toMatchObject({ appId: 'test-id', appKey: 'test-key', utc: 'false', numHours: '6' });
   });
 });
+
+describe('demo provider', () => {
+  const demo = (now = NOW) => createFlightService({ env: { FLIGHT_DATA_PROVIDER: 'demo' }, deps: { now: () => now } });
+  it('serves clearly labelled sample COK arrivals', async () => {
+    const r = await demo().arrivals({ date: '2026-10-11' });
+    expect(r.provider).toMatchObject({ id: 'demo', isDemo: true, configured: true });
+    expect(r.provider.label).toMatch(/sample data, not real/);
+    expect(r.flights.length).toBe(25);
+    expect(r.flights.every((f) => f.source === 'demo' && /^\S+ 9\d{3}$/.test(f.designator))).toBe(true);
+  });
+  it('derives status from the clock it is given, never inventing actuals in the future', async () => {
+    const r = await demo(new Date('2026-10-11T12:00:00+05:30')).arrivals({ date: '2026-10-11' });
+    for (const f of r.flights) {
+      if (f.arrival.actual) expect(new Date(f.arrival.actual) <= new Date('2026-10-11T12:00:00+05:30')).toBe(true);
+    }
+    expect(r.flights.find((f) => f.designator === 'IX 9452').status.normalized).toBe('CANCELLED');
+    expect(r.flights.some((f) => f.status.normalized === 'LANDED')).toBe(true);
+    expect(r.flights.some((f) => f.status.normalized === 'SCHEDULED')).toBe(true);
+  });
+  it('finds a demo flight by number', async () => {
+    const r = await demo().search({ number: '6E 9178', date: '2026-10-11' });
+    expect(r.flight.designator).toBe('6E 9178');
+  });
+});

@@ -199,7 +199,7 @@ export default function ArrivalSetup() {
                 {flightRef ? (
                   <div className="stack-sm">
                     <span className="verify-row">
-                      <BadgeCheck size={18} aria-hidden /> <strong>{flightRef.designator} verified</strong>
+                      <BadgeCheck size={18} aria-hidden /> <strong>{flightRef.designator} {flightRef.source === 'demo' ? 'found (demo data)' : 'verified'}</strong>
                       <span className="tag">{STATUS_TEXT[flightRef.status]}</span>
                     </span>
                     <span className="small">
