@@ -6,7 +6,7 @@ import { useAppState } from '../state/AppState.jsx';
 
 /**
  * Live mode only: if another traveller added your trip to a ride, open it.
- * Checks on load and every 30 s while you're searching.
+ * Checks on load and every 10 s while you're searching.
  */
 export function LiveInviteCheck() {
   const { state, update } = useAppState();
@@ -27,7 +27,7 @@ export function LiveInviteCheck() {
         })
         .catch(() => {});
     check();
-    const t = setInterval(check, 30000);
+    const t = setInterval(check, 10000);
     return () => {
       alive = false;
       clearInterval(t);

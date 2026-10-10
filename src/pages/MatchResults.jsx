@@ -50,20 +50,32 @@ export default function MatchResults() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trip?.flight?.id]);
 
-  const load = useCallback(async () => {
+  const [checkedAt, setCheckedAt] = useState(null);
+  const load = useCallback(async ({ silent = false } = {}) => {
     if (!trip) return;
-    setError('');
-    setCandidates(null);
+    if (!silent) {
+      setError('');
+      setCandidates(null);
+    }
     try {
       setCandidates(await getCandidateTrips(trip, arrivalWindow));
+      setCheckedAt(new Date());
+      if (silent) setError('');
     } catch (e) {
-      setError(e.message);
+      if (!silent) setError(e.message);
     }
   }, [trip, arrivalWindow]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // Live mode: other travellers can join at any moment, so re-check quietly every 15 s.
+  useEffect(() => {
+    if (!IS_LIVE || !trip) return undefined;
+    const t = setInterval(() => document.visibilityState === 'visible' && load({ silent: true }), 15000);
+    return () => clearInterval(t);
+  }, [load, trip]);
 
   const result = useMemo(
     () => (candidates && trip ? findCompatiblePassengers(trip, candidates, { arrivalWindowMinutes: arrivalWindow }) : null),
@@ -134,6 +146,7 @@ export default function MatchResults() {
             <>
               <p style={{ color: 'var(--ink)' }}>
                 <strong>{count} {count === 1 ? 'traveller fits' : 'travellers fit'}</strong> your route, best match first. Add one or more.
+                {IS_LIVE && <span className="small muted"> Updates automatically.</span>}
               </p>
               {result.matches.map((m) => {
                 const isSel = selected.some((s) => s.id === m.trip.id);
@@ -158,6 +171,7 @@ export default function MatchResults() {
               <span className="icon-box accent"><SearchX size={22} aria-hidden /></span>
               <h2>No one fits your route yet.</h2>
               <p>Travellers need to land within ±{arrivalWindow} minutes of you and be heading towards {trip.destinationName} or along the way.</p>
+              {IS_LIVE && <p className="small" role="status">This list checks for new travellers every 15 seconds{checkedAt ? ` — last checked ${fmtAirportTime(checkedAt.toISOString())}` : ''}.</p>}
               <div className="button-row">
                 {!widened && (
                   <Button onClick={() => setWindow(MATCHING_CONFIG.widenedArrivalWindowMinutes)}>
