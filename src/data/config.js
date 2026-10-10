@@ -64,9 +64,8 @@ export const FARE_ASSUMPTIONS = {
 };
 
 export const RIDE_CONFIG = {
-  // Proposed departure = latest arrival in the group + this buffer.
-  luggageBufferMinutes: 30,
-  // Waiting deadline = proposed departure + this.
+  // Proposed departure = when the last rider is likely ready (see utils/readiness.js),
+  // rounded up to 5 minutes. Waiting deadline = proposed departure + this.
   waitAfterDepartureMinutes: 10,
   reminderLeadSeconds: 120,
   extendByMinutes: 10,

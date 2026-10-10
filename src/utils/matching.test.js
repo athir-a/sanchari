@@ -5,6 +5,9 @@ import { buildDemoCandidates, DEMO_TRIP } from '../data/demoPassengers.js';
 import { validateArrival } from './validation.js';
 import { tripFromForm } from './trip.js';
 import { FARE_ASSUMPTIONS } from '../data/config.js';
+import { readyAt, effectiveArrival, baggageMinutes } from './readiness.js';
+import { planTimes } from '../services/rideService.js';
+import { flightFromForm } from './trip.js';
 
 const ARRIVAL = '2026-10-11T14:00';
 const me = tripFromForm({ ...DEMO_TRIP, arrivalLocal: ARRIVAL });
@@ -51,7 +54,7 @@ describe('findCompatiblePassengers', () => {
 
   it('explains each match', () => {
     const a = byName(matches, 'Ananya');
-    expect(a.reasons[0]).toBe('Arriving 12 min apart');
+    expect(a.reasons[0]).toBe('Ready about 8 min apart'); // lands 12 min later but carries one bag fewer
     expect(a.estimatedSavings).toBeGreaterThan(0);
   });
 });
@@ -143,5 +146,64 @@ describe('evaluatePair', () => {
     const k = candidates.find((c) => c.displayName === 'Kabir');
     expect(evaluatePair(me, k).ok).toBe(false);
     expect(evaluatePair(k, me).ok).toBe(false);
+  });
+});
+
+describe('flight-aware readiness', () => {
+  const verified = (est, actual = null) => ({ designator: '6E 2178', verification: 'verified', scheduledArrival: me.arrivalTime, estimatedArrival: est, actualArrival: actual });
+  const plus = (iso, m) => new Date(new Date(iso).getTime() + m * 60000).toISOString();
+
+  it('uses actual > estimated > scheduled for verified flights, and the entered time otherwise', () => {
+    expect(effectiveArrival({ ...me, flight: verified(plus(me.arrivalTime, 20)) })).toEqual({ time: plus(me.arrivalTime, 20), basis: 'estimated' });
+    expect(effectiveArrival({ ...me, flight: verified(plus(me.arrivalTime, 20), plus(me.arrivalTime, 15)) }).basis).toBe('actual');
+    // An unverified flight never overrides the passenger's own time.
+    expect(effectiveArrival({ ...me, flight: { designator: 'XY 1', verification: 'unverified', estimatedArrival: plus(me.arrivalTime, 90) } })).toEqual({ time: me.arrivalTime, basis: 'passenger' });
+  });
+
+  it('scales baggage time with bags instead of a fixed 30 minutes', () => {
+    expect(baggageMinutes(0)).toBeLessThan(baggageMinutes(1));
+    expect(baggageMinutes(3)).toBeGreaterThan(baggageMinutes(1));
+  });
+
+  it('a delayed flight drops a previously compatible match', () => {
+    const ananya = candidates.find((c) => c.displayName === 'Ananya');
+    expect(evaluatePair(me, ananya).ok).toBe(true);
+    const late = { ...me, flight: verified(plus(me.arrivalTime, 70)) };
+    const r = evaluatePair(late, ananya);
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('time');
+  });
+
+  it('a delay can create a match with a later traveller', () => {
+    const kabir = candidates.find((c) => c.displayName === 'Kabir'); // lands 95 min later
+    expect(evaluatePair(me, kabir).ok).toBe(false);
+    expect(evaluatePair({ ...me, flight: verified(plus(me.arrivalTime, 80)) }, kabir).ok).toBe(true);
+  });
+
+  it('same flight is not enough: incompatible destinations are still rejected', () => {
+    const farah = { ...candidates.find((c) => c.displayName === 'Farah'), arrivalTime: me.arrivalTime, flightNumber: me.flightNumber };
+    expect(evaluatePair(me, farah).code).toBe('destination');
+  });
+
+  it('proposed departure follows the latest likely-ready rider and moves with flight estimates', () => {
+    const ananya = candidates.find((c) => c.displayName === 'Ananya');
+    const base = planTimes([me, ananya]);
+    const delayed = planTimes([{ ...me, flight: verified(plus(me.arrivalTime, 40)) }, ananya]);
+    expect(new Date(delayed.proposed) > new Date(base.proposed)).toBe(true);
+    expect(new Date(base.proposed).getTime()).toBeGreaterThanOrEqual(new Date(readyAt(ananya)).getTime());
+  });
+
+  it('rejects pairs when no option fits a budget', () => {
+    const ananya = candidates.find((c) => c.displayName === 'Ananya');
+    expect(evaluatePair({ ...me, maxBudget: 100 }, ananya).code).toBe('budget');
+    expect(evaluatePair({ ...me, maxBudget: 2000 }, ananya).ok).toBe(true);
+  });
+
+  it('marks a manually typed flight unverified, and keeps a checked one verified', () => {
+    expect(flightFromForm({ flightNumber: 'ai 507' })).toEqual({ designator: 'AI 507', verification: 'unverified', source: 'passenger' });
+    const ref = { designator: '6E 2178', verification: 'verified' };
+    expect(flightFromForm({ flightNumber: '6e2178', flightRef: ref }).verification).toBe('verified');
+    expect(flightFromForm({ flightNumber: '6E 2179', flightRef: ref }).verification).toBe('unverified');
+    expect(flightFromForm({ flightNumber: '' })).toBeNull();
   });
 });

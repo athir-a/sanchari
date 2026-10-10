@@ -13,11 +13,22 @@ Sanchari matches travellers who land at COK around the same time and whose drop-
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # unit tests for matching, fares and validation
+npm test           # 99 automated tests: matching, fares, flight data layer, API, UI states
+npm run check:flights  # manual: one real request to the configured flight-data provider
 npm run build      # production build in dist/
 ```
 
 Node 18+ required. With no `.env` file the app runs in **demo mode** straight away.
+
+## Flight data
+
+Sanchari has a backend flight-data layer (`/api/flights/*`). It includes an arrivals board, flight verification for journeys, and matching on *likely-ready* times built from estimated and actual arrivals.
+
+- **Provider:** the Cirium FlightStats **Flex API** (licensed). Set `FLIGHT_DATA_PROVIDER=flightstats_flex`, `FLIGHTSTATS_APP_ID` and `FLIGHTSTATS_APP_KEY` on the server.
+- **Without keys:** the board says live data isn't connected. Passengers enter their own time, and those flights are marked *unverified*. No sample flights are ever shown as real.
+- **Not used:** the reverse-engineered flightstats.com web endpoints from `evilsaloon/flightstats-web-api`. They responded on 11 Oct 2026 with 90 real COK arrivals, but FlightStats' Terms of Use §2.1.2, §2.1.5 and §2.1.9 forbid this use.
+
+Full details are in **[docs/FLIGHT_DATA.md](docs/FLIGHT_DATA.md)**: endpoints, fields, caching, freshness labels, time zones, testing, troubleshooting and adding providers.
 
 ## Demo mode vs live mode
 
@@ -41,7 +52,7 @@ The two modes are never mixed: live mode never shows demo passengers.
 
 **Privacy model**
 - `trips` can be read only by their owner.
-- Other travellers are found through `find_candidate_trips()`. It returns name, area, rounded coordinates (~1 km), bags and preference. It never returns the street address or the flight number.
+- Other travellers are found through `find_candidate_trips()`. It returns name, area, rounded coordinates (~1 km), bags and preference. It never returns the street address or the flight number. For verified flights it returns only the best-known arrival time and its kind (actual, estimated or scheduled), so readiness can be matched.
 - Ride groups are created only through `create_ride_group()`, which checks that the caller owns their trip.
 - Members can read only their own ride. Each person can update only their own status row. Column grants block edits to fares and names.
 
@@ -107,6 +118,15 @@ The same assumptions apply to every option: ₹120 airport pickup + ₹100 base 
 ## Project structure
 
 ```
+api/                 Vercel function entry points → server/http
+server/flights/      provider interface, Flex adapter, cache, HTTP client, validation, time zones
+server/http/         router, handlers, auth, rate limit, Supabase access, Vite dev middleware
+docs/FLIGHT_DATA.md  flight-data integration guide
+scripts/live-check.mjs  manual real-provider check
+```
+
+
+```
 src/
   components/   SiteLayout (utility bar, header, nav, footer), ui (Button, Field, Tag, Note,
                 PageHeading, JourneySteps), PassengerCard, OptionCard, RideStatus,
@@ -136,13 +156,13 @@ Tip: open the app in two tabs. Status changes in one tab show up in the other.
 
 ## Implemented
 
-Editorial design system with larger-text and high-contrast modes · arrival form with validation and persisted input · rules-based matching with explained reasons and rejections · adjustable time window · empty state (widen window / change destination / demo matches) · multi-rider groups with pairwise checks · three journey options with consistent fare maths · Maps links · double-tap-safe confirmation · persistent ride state · one-tap statuses · delays and departure shifts · updates feed · countdown from a stored timestamp · a single 2-minute reminder with an honest vibration report · testable deadlines · demo mode · Supabase live mode with RLS, RPCs and Realtime · 25 unit tests.
+Editorial design system with larger-text and high-contrast modes · arrival form with validation and persisted input · rules-based matching with explained reasons and rejections · adjustable time window · empty state (widen window / change destination / demo matches) · multi-rider groups with pairwise checks · three journey options with consistent fare maths · Maps links · double-tap-safe confirmation · persistent ride state · one-tap statuses · delays and departure shifts · updates feed · countdown from a stored timestamp · a single 2-minute reminder with an honest vibration report · testable deadlines · demo mode · Supabase live mode with RLS, RPCs and Realtime · arrivals board with freshness labels · verified or unverified flights on journeys · readiness-based matching with budgets · flight changes surfaced with consent-only departure moves · 99 automated tests.
 
 ## Limitations and not built
 
 - No ticket upload or OCR, no live flight tracking, no live taxi or transit prices, no routing API, no payments, no identity verification, no chat.
 - Only COK is served. Destinations come from a curated list of areas along the Aluva–Angamaly–Chalakudy–Thrissur corridor and nearby Kochi suburbs. The exact address is free text and isn't geocoded.
-- Route overlap is estimated from straight-line distances, not a routing API. Live flight data, Django/WebSocket backend, driver assignment and group chat are not built.
+- Route overlap is estimated from straight-line distances, not a routing API. Driver assignment, group chat and WebSockets beyond Supabase Realtime are not built. Live flight data needs licensed Flex credentials, and no real Flex call has been verified yet (see docs/FLIGHT_DATA.md §10).
 - Reminders only work while the page is open. Browsers can't vibrate or notify from a closed or background tab, and iOS Safari has no Vibration API.
 - Live mode has passed its RLS test on local Postgres but hasn't been exercised end to end on a hosted Supabase project.
 - Demo co-passengers move forward only when you use the demo controls, so nothing about their arrival is ever assumed.

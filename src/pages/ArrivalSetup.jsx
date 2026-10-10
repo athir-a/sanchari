@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Minus, Plus, Wallet, Scale, CarFront, Route, Receipt, BellRing, ArrowRight, Sparkles, CircleCheck } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { Minus, Plus, Wallet, Scale, CarFront, Route, Receipt, BellRing, ArrowRight, Sparkles, CircleCheck, BadgeCheck, CircleHelp, PlaneLanding } from 'lucide-react';
 import { Button, Field, Note, useDocumentTitle } from '../components/ui.jsx';
 import { AIRPORTS, ZONES, CORRIDOR, destinationsForAirport } from '../data/airports.js';
 import { DEMO_TRIP } from '../data/demoPassengers.js';
@@ -8,11 +8,14 @@ import { MATCHING_CONFIG, PREFERENCES, FARE_ASSUMPTIONS as F, RIDE_CONFIG } from
 import { useAppState } from '../state/AppState.jsx';
 import { validateArrival } from '../utils/validation.js';
 import { tripFromForm } from '../utils/trip.js';
-import { toLocalInput } from '../utils/timeFormatting.js';
+import { toLocalInput, fmtAirportTime, isoToLocalInput, airportDate } from '../utils/timeFormatting.js';
+import { searchFlight, flightSnapshot, selectFlightForJourney, STATUS_TEXT } from '../services/flightApi.js';
+import { READINESS_CONFIG } from '../utils/readiness.js';
 import { saveTrip } from '../services/tripService.js';
 import { IS_LIVE } from '../services/supabaseClient.js';
 
-const ORDER = ['displayName', 'flightNumber', 'airportCode', 'arrivalLocal', 'destinationId', 'dropoffAddress', 'luggageCount', 'maxDetourMinutes', 'preference'];
+const ORDER = ['displayName', 'flightNumber', 'airportCode', 'arrivalLocal', 'destinationId', 'dropoffAddress', 'luggageCount', 'maxDetourMinutes', 'maxBudget', 'preference'];
+const norm = (s) => String(s || '').toUpperCase().replace(/[\s-]/g, '');
 const PREF_ICON = { cheapest: Wallet, balanced: Scale, direct: CarFront };
 
 function HeroIllustration() {
@@ -47,11 +50,40 @@ export default function ArrivalSetup() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const formRef = useRef(null);
+  const [check, setCheck] = useState(null);
+  const location = useLocation();
+
+  useEffect(() => {
+    if (location.hash === '#plan') document.getElementById('plan')?.scrollIntoView({ block: 'start' });
+  }, [location.hash]);
 
   const set = (k, v) => {
-    update((s) => ({ form: { ...s.form, [k]: v } }));
+    update((s) => {
+      const next = { ...s.form, [k]: v };
+      // A verified flight only stays attached while the number still matches it.
+      if (k === 'flightNumber' && s.form.flightRef && norm(v) !== norm(s.form.flightRef.designator)) next.flightRef = null;
+      return { form: next };
+    });
     if (errors[k]) setErrors((e) => ({ ...e, [k]: undefined }));
+    if (k === 'flightNumber') setCheck(null);
   };
+
+  const flightRef = form.flightRef && norm(form.flightRef.designator) === norm(form.flightNumber) ? form.flightRef : null;
+
+  async function checkFlight() {
+    const date = form.arrivalLocal ? form.arrivalLocal.slice(0, 10) : airportDate(0);
+    setCheck({ status: 'loading' });
+    const r = await searchFlight({ number: form.flightNumber, date, airport: form.airportCode });
+    if (!r.ok) {
+      setCheck({ status: 'error', error: r.error });
+      return;
+    }
+    const f = r.data.flight;
+    const best = f.arrival.actual || f.arrival.estimated || f.arrival.scheduled;
+    update((s) => ({ form: { ...s.form, flightNumber: f.designator, arrivalLocal: best ? isoToLocalInput(best) : s.form.arrivalLocal, flightRef: flightSnapshot(f, r.data.freshness) } }));
+    setErrors((e) => ({ ...e, flightNumber: undefined, arrivalLocal: undefined }));
+    setCheck({ status: 'ok' });
+  }
 
   const fillDemo = () => {
     const arrival = new Date(Date.now() + 75 * 60000);
@@ -73,7 +105,14 @@ export default function ArrivalSetup() {
     setSaving(true);
     setSaveError('');
     try {
-      const saved = await saveTrip(tripFromForm(form), state.trip?.id);
+      let saved = await saveTrip(tripFromForm(form), state.trip?.id);
+      if (IS_LIVE && flightRef) {
+        // In live mode only the server may mark a flight verified.
+        const r = await selectFlightForJourney(saved.id, { number: flightRef.designator, date: flightRef.flightDate });
+        saved = r.ok
+          ? { ...saved, flight: { ...flightRef, ...r.data.flight, verification: r.data.flight.verification } }
+          : { ...saved, flight: { designator: form.flightNumber, verification: 'unverified' } };
+      }
       update({ trip: saved, selected: [], optionKind: null });
       navigate('/matches');
     } catch (err) {
@@ -153,9 +192,40 @@ export default function ArrivalSetup() {
                   </select>
                 </Field>
               </div>
-              <Field id="arrivalLocal" label="Expected landing time" hint="Use the scheduled arrival on your ticket." error={errors.arrivalLocal}>
+              <Field id="arrivalLocal" label="Expected landing time" hint={flightRef ? 'Filled from your verified flight. You can still adjust it.' : 'Use the scheduled arrival on your ticket.'} error={errors.arrivalLocal}>
                 <input id="arrivalLocal" name="arrivalLocal" type="datetime-local" className="input" value={form.arrivalLocal} onChange={(e) => set('arrivalLocal', e.target.value)} {...inv('arrivalLocal')} />
               </Field>
+              <div className={`note${flightRef ? '' : check?.status === 'error' ? ' accent' : ''}`} aria-live="polite">
+                {flightRef ? (
+                  <div className="stack-sm">
+                    <span className="verify-row">
+                      <BadgeCheck size={18} aria-hidden /> <strong>{flightRef.designator} verified</strong>
+                      <span className="tag">{STATUS_TEXT[flightRef.status]}</span>
+                    </span>
+                    <span className="small">
+                      From {flightRef.origin} · scheduled {fmtAirportTime(flightRef.scheduledArrival)}
+                      {flightRef.estimatedArrival && ` · estimated ${fmtAirportTime(flightRef.estimatedArrival)}`}
+                      {flightRef.actualArrival && ` · landed ${fmtAirportTime(flightRef.actualArrival)}`} IST. Sanchari will use live times for matching.
+                    </span>
+                  </div>
+                ) : form.flightNumber ? (
+                  <div className="stack-sm">
+                    <span className="verify-row">
+                      <CircleHelp size={18} aria-hidden /> <strong>{form.flightNumber} is not verified</strong>
+                      <Button variant="secondary" loading={check?.status === 'loading'} onClick={checkFlight}>Check flight</Button>
+                    </span>
+                    <span className="small">
+                      {check?.status === 'error'
+                        ? `${check.error.message} We’ll use the landing time you entered, and the flight won’t update automatically.`
+                        : 'Check it against live arrivals, or keep it as entered — unverified flights don’t get automatic updates.'}
+                    </span>
+                  </div>
+                ) : (
+                  <span className="verify-row small">
+                    <PlaneLanding size={18} aria-hidden /> No flight number? <Link to="/arrivals">Browse today’s COK arrivals</Link> or just enter your landing time.
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="form-section">
@@ -210,6 +280,9 @@ export default function ArrivalSetup() {
                   {errors.maxDetourMinutes && <p className="error" role="alert">{errors.maxDetourMinutes}</p>}
                 </div>
               </div>
+              <Field id="maxBudget" label="Most you’d pay for your share (₹)" optional hint="Leave blank for no limit. We won’t pair you where every option costs more." error={errors.maxBudget}>
+                <input id="maxBudget" name="maxBudget" className="input" inputMode="numeric" placeholder="e.g. 900" value={form.maxBudget ?? ''} onChange={(e) => set('maxBudget', e.target.value.replace(/[^\d]/g, ''))} {...inv('maxBudget')} />
+              </Field>
             </div>
 
             <div className="form-section">
@@ -254,7 +327,8 @@ export default function ArrivalSetup() {
           <div>
             <h3>How we match you</h3>
             <ul className="check-list compact">
-              <li>Landing within ±{MATCHING_CONFIG.arrivalWindowMinutes} minutes of each other</li>
+              <li>Likely ready within ±{MATCHING_CONFIG.arrivalWindowMinutes} minutes of each other — using live flight times when your flight is verified</li>
+              <li>Same flight alone is never enough to match</li>
               <li>Drop-offs close together, or one on the other’s way</li>
               <li>Bags fit one cab (sedan 4, SUV 6)</li>
               <li>Door-to-door riders never sent to a bus stand</li>
@@ -316,13 +390,13 @@ export default function ArrivalSetup() {
           <details className="disclosure">
             <summary>What do other travellers see about me?<span className="plus" aria-hidden>+</span></summary>
             <div className="disclosure-body">
-              <p>Your first name, landing time, destination area, bags and preference. Your exact drop-off address and flight number are never shown to other travellers.</p>
+              <p>While matching: your first name, likely-ready time, destination area, bags and preference. Your flight number is shared only with co-passengers once you’re in a ride together, and your exact drop-off address is never shown to anyone else.</p>
             </div>
           </details>
           <details className="disclosure">
             <summary>How does the waiting window work?<span className="plus" aria-hidden>+</span></summary>
             <div className="disclosure-body">
-              <p>Departure is proposed {RIDE_CONFIG.luggageBufferMinutes} minutes after the last landing, and the group waits up to {RIDE_CONFIG.waitAfterDepartureMinutes} more minutes. Two minutes before the window ends, Sanchari shows a reminder and vibrates once where the browser allows. A web page can’t alert you while it’s closed.</p>
+              <p>Sanchari estimates when each person is ready — {READINESS_CONFIG.noBagMinutes} minutes after landing with only a cabin bag, {READINESS_CONFIG.baggageBaseMinutes} with one checked bag plus {READINESS_CONFIG.perExtraBagMinutes} per extra bag, then a {READINESS_CONFIG.walkToPickupMinutes}-minute walk — using the live estimated or actual landing time when your flight is verified. Departure is proposed when the last person is likely ready, and the group waits up to {RIDE_CONFIG.waitAfterDepartureMinutes} more minutes. Two minutes before the window ends, Sanchari shows a reminder and vibrates once where the browser allows. A web page can’t alert you while it’s closed.</p>
             </div>
           </details>
         </div>

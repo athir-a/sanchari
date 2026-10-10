@@ -36,6 +36,7 @@ export function SiteLayout({ children }) {
 
   const links = [
     { to: '/', label: 'Plan trip', enabled: true, match: ['/'] },
+    { to: '/arrivals', label: 'Arrivals', enabled: true, match: ['/arrivals'] },
     { to: '/matches', label: 'Matches', enabled: !!state.trip, match: ['/matches'], count: state.selected.length || null },
     { to: '/compare', label: 'Fare options', enabled: !!state.trip && state.selected.length > 0, match: ['/compare', '/confirm'] },
     { to: '/ride', label: 'Your ride', enabled: !!state.activeRideId, match: ['/ride'] },

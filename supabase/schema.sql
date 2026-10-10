@@ -23,11 +23,43 @@ create table if not exists public.trips (
   luggage_count    integer not null default 1 check (luggage_count between 0 and 6),
   preference       text not null check (preference in ('cheapest', 'balanced', 'direct')),
   max_detour_minutes integer not null default 25 check (max_detour_minutes between 5 and 60),
+  max_budget       integer check (max_budget is null or max_budget between 50 and 20000),
+  -- Flight link. flight_number is passenger-entered; every other flight_* column is
+  -- written only by the server (service role) after checking a flight-data provider.
+  flight_carrier   text,
+  flight_date      date,
+  flight_provider_id text,
+  flight_source    text,
+  flight_verification text not null default 'unverified' check (flight_verification in ('unverified', 'verified')),
+  flight_scheduled_arrival timestamptz,
+  flight_estimated_arrival timestamptz,
+  flight_actual_arrival    timestamptz,
+  flight_status    text check (flight_status is null or flight_status in ('SCHEDULED', 'EN_ROUTE', 'LANDED', 'CANCELLED', 'DIVERTED', 'NOT_OPERATIONAL', 'UNKNOWN')),
+  flight_fingerprint text,
+  flight_updated_at timestamptz,
   status           text not null default 'searching' check (status in ('searching', 'matched', 'completed', 'cancelled')),
   created_at       timestamptz not null default now()
 );
 create index if not exists trips_matching_idx on public.trips (airport_code, arrival_time) where status = 'searching';
 create index if not exists trips_user_idx on public.trips (user_id);
+create index if not exists trips_flight_refresh_idx on public.trips (flight_scheduled_arrival) where flight_verification = 'verified';
+
+-- Editing the flight number as a passenger drops any server verification for it.
+create or replace function public.trips_reset_flight_verification()
+returns trigger language plpgsql as $$
+begin
+  if new.flight_number is distinct from old.flight_number and current_user <> 'service_role' then
+    new.flight_verification := 'unverified';
+    new.flight_carrier := null; new.flight_date := null; new.flight_provider_id := null; new.flight_source := null;
+    new.flight_scheduled_arrival := null; new.flight_estimated_arrival := null; new.flight_actual_arrival := null;
+    new.flight_status := null; new.flight_fingerprint := null; new.flight_updated_at := null;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists trips_reset_flight_verification on public.trips;
+create trigger trips_reset_flight_verification before update on public.trips
+  for each row execute function public.trips_reset_flight_verification();
 
 create table if not exists public.ride_groups (
   id                      uuid primary key default gen_random_uuid(),
@@ -53,10 +85,15 @@ create table if not exists public.ride_members (
   destination_name     text not null,
   arrival_time         timestamptz not null,
   pickup_status        text not null default 'not_landed'
-                       check (pickup_status in ('not_landed', 'collecting_luggage', 'walking', 'at_pickup', 'delayed', 'departed', 'left')),
+                       check (pickup_status in ('not_landed', 'landed', 'collecting_luggage', 'walking', 'at_pickup', 'delayed', 'departed', 'left')),
   delay_minutes        integer not null default 0 check (delay_minutes between 0 and 180),
   estimated_fare_share numeric(10, 2) not null default 0 check (estimated_fare_share >= 0),
   confirmed            boolean not null default false,
+  -- Flight summary for co-riders (server-maintained). Shown only inside a ride.
+  flight_designator    text,
+  flight_verification  text check (flight_verification is null or flight_verification in ('unverified', 'verified')),
+  flight_best_arrival  timestamptz,
+  flight_best_kind     text check (flight_best_kind is null or flight_best_kind in ('actual', 'estimated', 'scheduled')),
   updated_at           timestamptz not null default now(),
   unique (ride_group_id, trip_id)
 );
@@ -95,19 +132,30 @@ returns table (
   id uuid, display_name text, flight_number text, airport_code text, arrival_time timestamptz,
   destination_id text, destination_name text, destination_zone text,
   destination_lat numeric, destination_lng numeric, dropoff_address text,
-  luggage_count integer, preference text, max_detour_minutes integer, status text
+  luggage_count integer, preference text, max_detour_minutes integer, max_budget integer,
+  flight_verification text, flight_best_arrival timestamptz, flight_best_kind text, status text
 )
 language sql stable security definer set search_path = public as $$
   select t.id, t.display_name, null::text, t.airport_code, t.arrival_time,
          t.destination_id, t.destination_name, t.destination_zone,
          round(t.destination_lat, 2), round(t.destination_lng, 2), null::text,
-         t.luggage_count, t.preference, t.max_detour_minutes, t.status
+         t.luggage_count, t.preference, t.max_detour_minutes, t.max_budget,
+         -- Readiness input without revealing the flight number.
+         t.flight_verification,
+         case when t.flight_verification = 'verified' then coalesce(t.flight_actual_arrival, t.flight_estimated_arrival, t.flight_scheduled_arrival) end,
+         case when t.flight_verification <> 'verified' then null
+              when t.flight_actual_arrival is not null then 'actual'
+              when t.flight_estimated_arrival is not null then 'estimated'
+              when t.flight_scheduled_arrival is not null then 'scheduled' end,
+         t.status
   from trips t
   where auth.uid() is not null
     and t.user_id <> auth.uid()
     and t.status = 'searching'
     and t.airport_code = p_airport
-    and t.arrival_time between p_from and p_to
+    -- Use the verified flight's best-known arrival when there is one.
+    and coalesce(case when t.flight_verification = 'verified' then coalesce(t.flight_actual_arrival, t.flight_estimated_arrival, t.flight_scheduled_arrival) end, t.arrival_time)
+        between p_from and p_to
     and p_to - p_from <= interval '6 hours'
   order by t.arrival_time
   limit 50;
@@ -144,9 +192,13 @@ begin
           p_route_summary, p_route_details, p_selected_preference, p_estimated_total_fare, auth.uid())
   returning id into v_group;
 
-  insert into ride_members (ride_group_id, trip_id, display_name, destination_name, arrival_time, estimated_fare_share, confirmed)
+  insert into ride_members (ride_group_id, trip_id, display_name, destination_name, arrival_time, estimated_fare_share, confirmed,
+                            flight_designator, flight_verification, flight_best_arrival, flight_best_kind)
   select v_group, t.id, t.display_name, t.destination_name, t.arrival_time,
-         coalesce((p_fare_shares ->> t.id::text)::numeric, 0), t.id = p_my_trip_id
+         coalesce((p_fare_shares ->> t.id::text)::numeric, 0), t.id = p_my_trip_id,
+         t.flight_number, t.flight_verification,
+         case when t.flight_verification = 'verified' then coalesce(t.flight_actual_arrival, t.flight_estimated_arrival, t.flight_scheduled_arrival) end,
+         case when t.flight_verification <> 'verified' then null when t.flight_actual_arrival is not null then 'actual' when t.flight_estimated_arrival is not null then 'estimated' when t.flight_scheduled_arrival is not null then 'scheduled' end
   from trips t where t.id = p_my_trip_id or t.id = any(p_other_trip_ids);
 
   update trips set status = 'matched' where id = p_my_trip_id or id = any(p_other_trip_ids);
@@ -196,7 +248,15 @@ create policy updates_insert_member on public.ride_updates for insert to authent
 -- Column-level limits on top of RLS.
 revoke all on public.trips, public.ride_groups, public.ride_members, public.ride_updates from anon;
 revoke insert, update, delete on public.ride_groups, public.ride_members from authenticated;
-grant select, insert, update, delete on public.trips to authenticated;
+revoke insert, update on public.trips from authenticated;
+grant select, delete on public.trips to authenticated;
+-- Passengers may write their own trip fields, but not the server-owned flight_* verification columns.
+grant insert (display_name, flight_number, airport_code, arrival_time, destination_id, destination_name, destination_zone,
+              destination_lat, destination_lng, dropoff_address, luggage_count, preference, max_detour_minutes, max_budget, status)
+  on public.trips to authenticated;
+grant update (display_name, flight_number, airport_code, arrival_time, destination_id, destination_name, destination_zone,
+              destination_lat, destination_lng, dropoff_address, luggage_count, preference, max_detour_minutes, max_budget, status)
+  on public.trips to authenticated;
 grant select on public.ride_groups, public.ride_members, public.ride_updates to authenticated;
 grant update (proposed_departure_time, waiting_deadline, status) on public.ride_groups to authenticated;
 grant update (pickup_status, delay_minutes, confirmed, updated_at) on public.ride_members to authenticated;

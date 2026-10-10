@@ -4,6 +4,7 @@ import { AlertTriangle, CarFront, Luggage, MapPin, PartyPopper, Timer, Footprint
 import { Button, Note, PageHeading, TextButton, useDocumentTitle } from '../components/ui.jsx';
 import { RideStatusCard, JourneyChecklist, MemberList, UpdatesFeed } from '../components/RideStatus.jsx';
 import { useNow, useDeadlineReminder, ReminderBanner } from '../components/Countdown.jsx';
+import { FlightPanel } from '../components/FlightPanel.jsx';
 import { useAppState } from '../state/AppState.jsx';
 import { IS_LIVE } from '../services/supabaseClient.js';
 import * as rides from '../services/rideService.js';
@@ -12,16 +13,18 @@ import { fmtTime } from '../utils/timeFormatting.js';
 import { formatINR } from '../utils/fareCalculation.js';
 
 const NEXT = {
-  not_landed: { status: 'collecting_luggage', label: 'I’ve landed · collecting luggage', question: 'Off the plane?', icon: Luggage, hint: 'Tap when you’re off the plane.' },
+  not_landed: { status: 'landed', label: 'I’ve landed', question: 'Off the plane?', icon: PlaneLanding, hint: 'Tap when your flight is on the ground. Sanchari never assumes this from the clock.' },
+  landed: { status: 'collecting_luggage', label: 'I’m collecting my baggage', question: 'At the belt?', icon: Luggage, hint: 'Tap when you reach baggage claim.' },
   collecting_luggage: { status: 'walking', label: 'I’m walking to the pickup point', question: 'Got your bags?', icon: Footprints, hint: 'Tap once you have your bags.' },
   delayed: { status: 'walking', label: 'I’m walking to the pickup point', question: 'On your way now?', icon: Footprints, hint: 'Tap once you’re on your way.' },
   walking: { status: 'at_pickup', label: 'I’m at the pickup point', question: 'Reached the pickup area?', icon: MapPin, hint: 'Tap when you reach the pickup area.' },
 };
 
 const STATUS_BUTTONS = [
-  ['collecting_luggage', 'Collecting luggage', Luggage],
+  ['landed', 'Flight landed', PlaneLanding],
+  ['collecting_luggage', 'Collecting baggage', Luggage],
   ['walking', 'Walking to pickup', Footprints],
-  ['at_pickup', 'At the pickup point', MapPin],
+  ['at_pickup', 'Ready for pickup', MapPin],
 ];
 
 export default function RideCoordination() {
@@ -53,6 +56,22 @@ export default function RideCoordination() {
   }, [rideId, myTripId]);
 
   const closed = ride?.status === 'departed' || ride?.status === 'cancelled';
+
+  const onFlight = useCallback(
+    async (snap) => {
+      update((s) => (s.trip ? { trip: { ...s.trip, flight: { ...s.trip.flight, ...snap } } } : {}));
+      try {
+        const current = await rides.getRide(rideId, myTripId);
+        if (current) {
+          const next = await rides.recordMyFlight(current, snap);
+          if (next) setRide(next);
+        }
+      } catch {
+        /* the panel already shows the new times */
+      }
+    },
+    [update, rideId, myTripId],
+  );
   const { reminder, remaining, dismiss } = useDeadlineReminder(ride, now, !!ride && !closed);
 
   const act = useCallback(async (name, fn) => {
@@ -156,7 +175,7 @@ export default function RideCoordination() {
           <div className="note accent" role="status">
             <strong>
               <AlertTriangle size={15} aria-hidden style={{ display: 'inline', verticalAlign: '-2px', marginRight: 6 }} />
-              {delayed.map((m) => (m.isMe ? 'You are' : `${m.displayName} is`)).join(', ')} delayed by about {maxDelay} min.
+              {delayed.map((m) => (m.isMe ? 'You need' : `${m.displayName} needs`)).join(', ')} about {maxDelay} more min.
             </strong>{' '}
             Departure is still {fmtTime(ride.proposedDepartureTime)}.{' '}
             <TextButton style={{ color: 'var(--accent)', minHeight: 0 }} disabled={!!pending} onClick={() => act('shift', () => rides.shiftDeparture(ride, maxDelay))}>
@@ -201,12 +220,12 @@ export default function RideCoordination() {
                     </Button>
                   ))}
                   <Button variant="warning" disabled={!!pending} aria-expanded={showDelay} aria-pressed={me.pickupStatus === 'delayed'} onClick={() => setShowDelay((v) => !v)}>
-                    <AlertTriangle size={18} aria-hidden /> I’m delayed
+                    <AlertTriangle size={18} aria-hidden /> I need more time
                   </Button>
                 </div>
                 {showDelay && (
                   <div className="note accent delay-picker">
-                    <span>Delayed by about</span>
+                    <span>I need about</span>
                     {[10, 20, 30].map((m) => (
                       <Button key={m} variant="secondary" disabled={!!pending} onClick={() => { setShowDelay(false); act('delay', () => rides.updateMyStatus(ride, 'delayed', m)); }}>
                         {m} min
@@ -270,7 +289,12 @@ export default function RideCoordination() {
           </details>
         </div>
 
-        <aside className="quick-panel" aria-label="Riders and updates">
+        <aside className="quick-panel" aria-label="Your flight, riders and updates">
+          <div>
+            <p className="eyebrow">Your flight</p>
+            <FlightPanel trip={state.trip} ride={ride} onFlight={onFlight} busy={!!pending} onProposeShift={(m) => act('shift', () => rides.shiftDeparture(ride, m))} />
+          </div>
+          <div className="divider" />
           <div>
             <p className="eyebrow">Who’s riding</p>
             <MemberList ride={ride} now={now} />
@@ -295,7 +319,7 @@ export default function RideCoordination() {
                 </div>
               ) : (
                 <TextButton danger disabled={!!pending} onClick={() => setConfirmLeave(true)}>
-                  <LogOut size={15} aria-hidden /> Leave this ride
+                  <LogOut size={15} aria-hidden /> I can’t continue — leave this ride
                 </TextButton>
               )}
             </>

@@ -12,6 +12,8 @@ export const EMPTY_FORM = {
   luggageCount: 1,
   preference: 'balanced',
   maxDetourMinutes: 25,
+  maxBudget: '',
+  flightRef: null,
 };
 
 const INITIAL = {

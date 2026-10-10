@@ -24,7 +24,7 @@ export default function RideConfirmation() {
   if (!trip) return <Navigate to="/" replace />;
   if (!option || !option.available) return <Navigate to="/compare" replace />;
 
-  const times = planTimes([trip, ...selected].map((t) => t.arrivalTime));
+  const times = planTimes([trip, ...selected]);
 
   async function confirm() {
     if (inFlight.current) return; // guard against double taps

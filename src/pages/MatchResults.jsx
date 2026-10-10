@@ -10,7 +10,9 @@ import { findCompatiblePassengers, canJoinGroup } from '../utils/matching.js';
 import { MATCHING_CONFIG, PREFERENCES } from '../data/config.js';
 import { DEMO_TRIP } from '../data/demoPassengers.js';
 import { tripFromForm } from '../utils/trip.js';
-import { fmtDateTime } from '../utils/timeFormatting.js';
+import { fmtDateTime, fmtAirportTime } from '../utils/timeFormatting.js';
+import { getFlight, flightSnapshot } from '../services/flightApi.js';
+import { effectiveArrival } from '../utils/readiness.js';
 
 export default function MatchResults() {
   useDocumentTitle('Travellers on your route');
@@ -19,6 +21,34 @@ export default function MatchResults() {
   const { trip, arrivalWindow, selected } = state;
   const [candidates, setCandidates] = useState(null);
   const [error, setError] = useState('');
+  const [removed, setRemoved] = useState([]);
+  const [flightNote, setFlightNote] = useState(null);
+
+  // Refresh a verified flight once per visit (the server caches provider calls).
+  // A change re-runs matching for any group that isn't confirmed yet.
+  useEffect(() => {
+    const f = trip?.flight;
+    if (!f || f.verification !== 'verified' || !f.id) return;
+    let alive = true;
+    getFlight(f.id).then((r) => {
+      if (!alive) return;
+      if (!r.ok) {
+        setFlightNote({ tone: 'accent', text: `Couldn’t refresh ${f.designator}: ${r.error.message} Matching uses the last known times.` });
+        return;
+      }
+      const snap = flightSnapshot(r.data.flight, r.data.freshness);
+      const before = [f.estimatedArrival, f.actualArrival, f.status].join('|');
+      const after = [snap.estimatedArrival, snap.actualArrival, snap.status].join('|');
+      if (before !== after) {
+        update((s) => ({ trip: { ...s.trip, flight: { ...s.trip.flight, ...snap } } }));
+        setFlightNote({ tone: '', text: `${f.designator} updated: ${snap.actualArrival ? `landed ${fmtAirportTime(snap.actualArrival)}` : snap.estimatedArrival ? `now estimated ${fmtAirportTime(snap.estimatedArrival)}` : 'schedule only'} IST. Matches below are recalculated.` });
+      }
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trip?.flight?.id]);
 
   const load = useCallback(async () => {
     if (!trip) return;
@@ -44,7 +74,11 @@ export default function MatchResults() {
   useEffect(() => {
     if (!result) return;
     const ids = new Set(result.matches.map((m) => m.trip.id));
-    if (selected.some((s) => !ids.has(s.id))) update({ selected: selected.filter((s) => ids.has(s.id)) });
+    const gone = selected.filter((s) => !ids.has(s.id));
+    if (gone.length) {
+      setRemoved(gone.map((s) => ({ name: s.displayName, reason: result.rejected.find((r) => r.trip.id === s.id)?.reason })));
+      update({ selected: selected.filter((s) => ids.has(s.id)), optionKind: null });
+    }
   }, [result, selected, update]);
 
   if (!trip) return <Navigate to="/" replace />;
@@ -76,6 +110,13 @@ export default function MatchResults() {
 
       <section className="workspace">
         <div className="stack" aria-live="polite">
+          {flightNote && <div className={`note ${flightNote.tone}`} role="status">{flightNote.text}</div>}
+          {removed.length > 0 && (
+            <div className="note accent" role="alert">
+              <strong>Your selection changed.</strong>{' '}
+              {removed.map((r) => `${r.name} no longer fits${r.reason ? ` (${r.reason.toLowerCase()})` : ''}`).join('; ')} — removed from your proposed ride. Nothing was confirmed yet.
+            </div>
+          )}
           {error && (
             <Note tone="danger" title="Couldn’t load travellers" role="alert">
               {error} <TextButton onClick={load}>Try again</TextButton>
@@ -140,7 +181,12 @@ export default function MatchResults() {
           <div>
             <p className="eyebrow">Your trip</p>
             <h3>{trip.airportCode} → {trip.destinationName}</h3>
-            <p className="small">Lands {fmtDateTime(trip.arrivalTime)} · {trip.luggageCount} bags · {PREFERENCES[trip.preference].label} · up to {trip.maxDetourMinutes} min detour</p>
+            <p className="small">
+              {trip.flight?.verification === 'verified'
+                ? `${trip.flight.designator} (verified) · ${effectiveArrival(trip).basis} arrival ${fmtAirportTime(effectiveArrival(trip).time)} IST`
+                : `${trip.flight ? `${trip.flight.designator} (unverified) · ` : ''}lands ${fmtDateTime(trip.arrivalTime)}`}
+            </p>
+            <p className="small">{trip.luggageCount} bags · {PREFERENCES[trip.preference].label} · up to {trip.maxDetourMinutes} min detour</p>
             <TextButton onClick={() => navigate('/')}>Edit trip details</TextButton>
           </div>
           <div className="divider" />

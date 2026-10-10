@@ -1,7 +1,8 @@
 import { MATCHING_CONFIG, FARE_ASSUMPTIONS, PREFERENCES } from '../data/config.js';
 import { getAirport, getZone } from '../data/airports.js';
 import { haversineKm, roadKm, orderStops } from './geo.js';
-import { vehicleFor, soloDirect, buildOption } from './fareCalculation.js';
+import { vehicleFor, soloDirect, buildOption, buildRideOptions } from './fareCalculation.js';
+import { readyAt, effectiveArrival } from './readiness.js';
 
 const minutesBetween = (a, b) => Math.abs(new Date(a).getTime() - new Date(b).getTime()) / 60000;
 const clamp01 = (n) => Math.max(0, Math.min(1, n));
@@ -41,9 +42,11 @@ export function evaluatePair(me, other, config = MATCHING_CONFIG) {
     return { ok: false, code: 'airport', reason: `Lands at ${other.airportCode}, not ${me.airportCode}` };
   }
 
-  const timeDiff = Math.round(minutesBetween(me.arrivalTime, other.arrivalTime));
+  // Compare when people are likely READY (best known arrival + their baggage time),
+  // not just flight numbers or scheduled times.
+  const timeDiff = Math.round(minutesBetween(readyAt(me), readyAt(other)));
   if (timeDiff > windowMin) {
-    return { ok: false, code: 'time', reason: `Arrives ${timeDiff} min apart (limit ${windowMin})` };
+    return { ok: false, code: 'time', reason: `Ready ${timeDiff} min apart (limit ${windowMin})` };
   }
 
   const gapKm = haversineKm(point(me), point(other));
@@ -71,6 +74,17 @@ export function evaluatePair(me, other, config = MATCHING_CONFIG) {
     };
   }
 
+  // Budgets: at least one shared option must fit each rider's own limit.
+  if (me.maxBudget || other.maxBudget) {
+    const fits = buildRideOptions(me, [other]).some((o) => {
+      if (!o.available) return false;
+      const mine = o.members.find((m) => m.tripId === me.id)?.cost;
+      const theirs = o.members.find((m) => m.tripId === other.id)?.cost;
+      return (!me.maxBudget || mine <= me.maxBudget) && (!other.maxBudget || theirs <= other.maxBudget);
+    });
+    if (!fits) return { ok: false, code: 'budget', reason: 'No shared option fits both budgets' };
+  }
+
   const w = config.weights;
   const parts = {
     time: clamp01(1 - timeDiff / windowMin),
@@ -89,7 +103,10 @@ export function evaluatePair(me, other, config = MATCHING_CONFIG) {
 function explain(me, other, metrics) {
   const reasons = [];
   const { timeDiff, gapKm, detour, vehicle } = metrics;
-  reasons.push(timeDiff <= 2 ? 'Landing at about the same time' : `Arriving ${timeDiff} min apart`);
+  reasons.push(timeDiff <= 2 ? 'Ready at about the same time' : `Ready about ${timeDiff} min apart`);
+  const basis = effectiveArrival(other).basis;
+  if (basis === 'actual') reasons.push(`${other.displayName}’s flight has landed (verified)`);
+  else if (basis === 'estimated') reasons.push(`Using ${other.displayName}’s live estimated arrival`);
   if (me.destinationId && me.destinationId === other.destinationId) {
     reasons.push(`Same area: ${other.destinationName}`);
   } else if (me.destinationZone === other.destinationZone) {
@@ -157,6 +174,7 @@ export function canJoinGroup(me, selected, candidate, overrides = {}) {
         preference: `${a} wants ${PREFERENCES[s.preference].label} and ${b} wants ${PREFERENCES[candidate.preference].label}`,
         detour: `Riding with ${a} would add too much detour`,
         airport: `${b} lands at a different airport`,
+        budget: `no shared option fits both ${a}’s and ${b}’s budgets`,
       }[r.code];
       return { ok: false, reason: `Can’t add to this group: ${why}.` };
     }

@@ -490,3 +490,32 @@ details.disclosure[open] .plus { transform: rotate(45deg); }
   *, *::before, *::after { transition: none !important; animation: none !important; }
   .card.interactive:hover { transform: none; }
 }
+
+/* ---------- Arrivals board ---------- */
+.d-block { display: block; }
+.arrivals-tools { display: flex; align-items: flex-end; gap: 0.8rem; flex-wrap: wrap; }
+.input-with-icon { position: relative; }
+.input-with-icon svg { position: absolute; left: 0.85rem; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.input-with-icon .input { padding-left: 2.6rem; }
+.table-wrap { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+.arrivals-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; color: var(--ink); }
+.arrivals-table th, .arrivals-table td { text-align: left; padding: 0.9rem 1rem; border-top: 1px solid var(--line); vertical-align: top; line-height: 1.5; }
+.arrivals-table thead th { border-top: 0; font-size: 0.66rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 700; background: var(--quick); }
+.arrivals-table tbody th { font-weight: 400; }
+.arrivals-table tr.is-selected { background: var(--soft); }
+.flight-code { font-weight: 700; font-size: 0.95rem; }
+.controls-row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
+.controls-row .field { min-width: 180px; }
+.verify-row { display: flex; flex-wrap: wrap; gap: 0.5rem 0.9rem; align-items: center; }
+.flight-panel dl { display: grid; grid-template-columns: auto 1fr; gap: 0.35rem 1rem; margin: 0.6rem 0 0; font-size: 0.88rem; }
+.flight-panel dt { color: var(--muted); }
+.flight-panel dd { margin: 0; color: var(--ink); font-weight: 600; }
+@media (max-width: 860px) {
+  .arrivals-table thead { display: none; }
+  .arrivals-table, .arrivals-table tbody, .arrivals-table tr, .arrivals-table th, .arrivals-table td { display: block; width: 100%; }
+  .arrivals-table tr { border-top: 1px solid var(--line); padding: 0.8rem 0; }
+  .arrivals-table tr:first-child { border-top: 0; }
+  .arrivals-table th, .arrivals-table td { border: 0; padding: 0.25rem 1rem; }
+  .arrivals-table td[data-label]::before { content: attr(data-label); display: block; font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  .arrivals-table td:last-child { padding-top: 0.6rem; }
+}

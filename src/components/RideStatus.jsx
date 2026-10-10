@@ -3,7 +3,7 @@ import { Avatar } from './PassengerCard.jsx';
 import { Tag } from './ui.jsx';
 import { STATUS_LABEL } from '../services/rideService.js';
 import { formatINR } from '../utils/fareCalculation.js';
-import { fmtCountdown, fmtTime, timeAgo } from '../utils/timeFormatting.js';
+import { fmtCountdown, fmtTime, timeAgo, fmtAirportTime } from '../utils/timeFormatting.js';
 import { googleMapsSearchUrl } from '../utils/geo.js';
 import { getAirport } from '../data/airports.js';
 
@@ -69,7 +69,8 @@ export function RideStatusCard({ ride, now }) {
 }
 
 const STEPS = [
-  { id: 'luggage', title: 'Collect your luggage' },
+  { id: 'land', title: 'Land at Cochin' },
+  { id: 'luggage', title: 'Collect your baggage' },
   { id: 'walk', title: 'Walk to the pickup point' },
   { id: 'meet', title: 'Meet the other passengers' },
   { id: 'depart', title: 'Depart together' },
@@ -82,6 +83,7 @@ export function JourneyChecklist({ ride }) {
   const allHere = active.every((m) => ['at_pickup', 'departed'].includes(m.pickupStatus));
   const departed = ride.status === 'departed';
   const done = {
+    land: s !== 'not_landed' || departed,
     luggage: ['walking', 'at_pickup', 'departed'].includes(s) || departed,
     walk: ['at_pickup', 'departed'].includes(s) || departed,
     meet: allHere || departed,
@@ -105,7 +107,7 @@ export function JourneyChecklist({ ride }) {
   );
 }
 
-const STATUS_TONE = { not_landed: 'plain', collecting_luggage: '', walking: '', at_pickup: 'brand', delayed: 'accent', departed: 'brand', left: 'danger' };
+const STATUS_TONE = { not_landed: 'plain', landed: '', collecting_luggage: '', walking: '', at_pickup: 'brand', delayed: 'accent', departed: 'brand', left: 'danger' };
 
 export function MemberList({ ride, now }) {
   return (
@@ -119,7 +121,13 @@ export function MemberList({ ride, now }) {
               {m.isDemo && <span className="muted" style={{ fontWeight: 400, fontSize: '0.75rem' }}> · demo</span>}
               {!m.confirmed && m.pickupStatus !== 'left' && <span style={{ color: 'var(--accent)', fontWeight: 600, fontSize: '0.75rem' }}> · not confirmed</span>}
             </span>
-            <p>to {m.destinationName} · lands {fmtTime(m.arrivalTime)} · {timeAgo(m.updatedAt, now)}</p>
+            <p>to {m.destinationName} · {timeAgo(m.updatedAt, now)}</p>
+            <p>
+              {m.flightDesignator ? `${m.flightDesignator} · ` : ''}
+              {m.flightVerification === 'verified' && m.flightBestArrival
+                ? `${m.flightBestKind === 'actual' ? 'landed' : m.flightBestKind === 'estimated' ? 'est.' : 'sched.'} ${fmtAirportTime(m.flightBestArrival)} · verified`
+                : `lands ${fmtAirportTime(m.arrivalTime)}${m.flightDesignator ? ' · unverified' : ' · own time'}`}
+            </p>
           </div>
           <Tag tone={STATUS_TONE[m.pickupStatus] ?? 'plain'}>
             {m.pickupStatus === 'delayed' ? `Delayed +${m.delayMinutes} min` : STATUS_LABEL[m.pickupStatus]}

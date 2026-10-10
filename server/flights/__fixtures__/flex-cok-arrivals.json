@@ -1,0 +1,97 @@
+{
+  "_comment": "Hand-built fixture following the documented Cirium FlightStats Flex v2 flightStatus schema (developer.flightstats.com/api-docs/flightstatus/v2/flightstatusresponse). NOT a recorded live response: no Flex credentials were available. Flight numbers are real COK routes observed on 2026-10-11; times and statuses are illustrative.",
+  "request": { "airport": { "requestedCode": "COK", "fsCode": "COK" }, "date": { "year": "2026", "month": "10", "day": "11" }, "hourOfDay": { "requested": "0", "interpreted": 0 }, "numHours": { "requested": "6", "interpreted": 6 } },
+  "appendix": {
+    "airlines": [
+      { "fs": "SQ", "iata": "SQ", "icao": "SIA", "name": "Singapore Airlines", "active": true },
+      { "fs": "AI", "iata": "AI", "icao": "AIC", "name": "Air India", "active": true },
+      { "fs": "6E", "iata": "6E", "icao": "IGO", "name": "IndiGo", "active": true },
+      { "fs": "EK", "iata": "EK", "icao": "UAE", "name": "Emirates", "active": true },
+      { "fs": "QR", "iata": "QR", "icao": "QTR", "name": "Qatar Airways", "active": true }
+    ],
+    "airports": [
+      { "fs": "COK", "iata": "COK", "icao": "VOCI", "name": "Cochin International Airport", "city": "Kochi", "countryCode": "IN", "timeZoneRegionName": "Asia/Kolkata", "utcOffsetHours": 5.5 },
+      { "fs": "SIN", "iata": "SIN", "icao": "WSSS", "name": "Singapore Changi Airport", "city": "Singapore", "countryCode": "SG", "timeZoneRegionName": "Asia/Singapore" },
+      { "fs": "BLR", "iata": "BLR", "icao": "VOBL", "name": "Kempegowda International Airport", "city": "Bengaluru", "countryCode": "IN", "timeZoneRegionName": "Asia/Kolkata" },
+      { "fs": "DXB", "iata": "DXB", "icao": "OMDB", "name": "Dubai International Airport", "city": "Dubai", "countryCode": "AE", "timeZoneRegionName": "Asia/Dubai" },
+      { "fs": "DOH", "iata": "DOH", "icao": "OTHH", "name": "Hamad International Airport", "city": "Doha", "countryCode": "QA", "timeZoneRegionName": "Asia/Qatar" }
+    ]
+  },
+  "flightStatuses": [
+    {
+      "flightId": 1413317656,
+      "carrierFsCode": "SQ",
+      "flightNumber": "536",
+      "departureAirportFsCode": "SIN",
+      "arrivalAirportFsCode": "COK",
+      "departureDate": { "dateLocal": "2026-10-10T22:05:00.000", "dateUtc": "2026-10-10T14:05:00.000Z" },
+      "arrivalDate": { "dateLocal": "2026-10-11T00:05:00.000", "dateUtc": "2026-10-10T18:35:00.000Z" },
+      "status": "L",
+      "operationalTimes": {
+        "publishedArrival": { "dateLocal": "2026-10-11T00:05:00.000", "dateUtc": "2026-10-10T18:35:00.000Z" },
+        "scheduledGateArrival": { "dateLocal": "2026-10-11T00:05:00.000", "dateUtc": "2026-10-10T18:35:00.000Z" },
+        "estimatedGateArrival": { "dateLocal": "2026-10-10T23:58:00.000", "dateUtc": "2026-10-10T18:28:00.000Z" },
+        "actualRunwayArrival": { "dateLocal": "2026-10-10T23:51:00.000", "dateUtc": "2026-10-10T18:21:00.000Z" },
+        "actualGateArrival": { "dateLocal": "2026-10-10T23:57:00.000", "dateUtc": "2026-10-10T18:27:00.000Z" }
+      },
+      "codeshares": [
+        { "fsCode": "AI", "flightNumber": "8298", "relationship": "L" },
+        { "fsCode": "NZ", "flightNumber": "3256", "relationship": "L" }
+      ],
+      "airportResources": { "arrivalTerminal": "3", "arrivalGate": "D4", "baggage": "5" },
+      "flightStatusUpdates": [{ "updatedAt": { "dateUtc": "2026-10-10T18:28:12.000Z" }, "source": "Airline" }]
+    },
+    {
+      "flightId": 1413400001,
+      "carrierFsCode": "6E",
+      "flightNumber": "2178",
+      "departureAirportFsCode": "BLR",
+      "arrivalAirportFsCode": "COK",
+      "departureDate": { "dateLocal": "2026-10-11T04:40:00.000", "dateUtc": "2026-10-10T23:10:00.000Z" },
+      "arrivalDate": { "dateLocal": "2026-10-11T05:45:00.000", "dateUtc": "2026-10-11T00:15:00.000Z" },
+      "status": "A",
+      "operationalTimes": {
+        "scheduledGateArrival": { "dateLocal": "2026-10-11T05:45:00.000", "dateUtc": "2026-10-11T00:15:00.000Z" },
+        "estimatedGateArrival": { "dateLocal": "2026-10-11T06:05:00.000", "dateUtc": "2026-10-11T00:35:00.000Z" }
+      },
+      "codeshares": [],
+      "airportResources": { "arrivalTerminal": "1" }
+    },
+    {
+      "flightId": 1413400002,
+      "carrierFsCode": "EK",
+      "flightNumber": "530",
+      "departureAirportFsCode": "DXB",
+      "arrivalAirportFsCode": "COK",
+      "departureDate": { "dateLocal": "2026-10-11T00:10:00.000", "dateUtc": "2026-10-10T20:10:00.000Z" },
+      "arrivalDate": { "dateLocal": "2026-10-11T05:35:00.000", "dateUtc": "2026-10-11T00:05:00.000Z" },
+      "status": "S",
+      "operationalTimes": {
+        "publishedArrival": { "dateLocal": "2026-10-11T05:35:00.000", "dateUtc": "2026-10-11T00:05:00.000Z" }
+      }
+    },
+    {
+      "flightId": 1413400003,
+      "carrierFsCode": "QR",
+      "flightNumber": "516",
+      "departureAirportFsCode": "DOH",
+      "arrivalAirportFsCode": "COK",
+      "departureDate": { "dateLocal": "2026-10-10T20:00:00.000", "dateUtc": "2026-10-10T17:00:00.000Z" },
+      "arrivalDate": { "dateLocal": "2026-10-11T02:50:00.000", "dateUtc": "2026-10-10T21:20:00.000Z" },
+      "status": "ZZ",
+      "operationalTimes": {}
+    },
+    {
+      "flightId": 1413400004,
+      "carrierFsCode": "AI",
+      "flightNumber": "507",
+      "departureAirportFsCode": "BLR",
+      "arrivalAirportFsCode": "COK",
+      "status": "C",
+      "operationalTimes": {
+        "scheduledGateArrival": { "dateLocal": "2026-10-11T03:10:00.000", "dateUtc": "2026-10-10T21:40:00.000Z" }
+      }
+    },
+    { "flightId": 99, "carrierFsCode": "SQ", "departureAirportFsCode": "SIN" }
+  ]
+}

@@ -34,6 +34,10 @@ export function validateArrival(form, now = Date.now()) {
   const bags = Number(form.luggageCount);
   if (!Number.isInteger(bags) || bags < 0 || bags > 6) e.luggageCount = 'Bags must be between 0 and 6.';
 
+  if (form.maxBudget !== undefined && form.maxBudget !== null && form.maxBudget !== '') {
+    const b = Number(form.maxBudget);
+    if (!Number.isInteger(b) || b < 50 || b > 20000) e.maxBudget = 'Enter a whole amount between ₹50 and ₹20,000, or leave it blank.';
+  }
   if (!MATCHING_CONFIG.detourChoices.includes(Number(form.maxDetourMinutes))) e.maxDetourMinutes = 'Choose how much extra time you’ll accept.';
   if (!['cheapest', 'balanced', 'direct'].includes(form.preference)) e.preference = 'Choose how you’d like to travel.';
   return e;

@@ -1,25 +1,30 @@
 import { IS_LIVE, supabase, ensureSession } from './supabaseClient.js';
 import { readJSON, writeJSON, storageKey, uuid } from './storage.js';
 import { RIDE_CONFIG } from '../data/config.js';
+import { readyAt, effectiveArrival } from '../utils/readiness.js';
 
-export const STATUS_ORDER = ['not_landed', 'collecting_luggage', 'walking', 'at_pickup'];
+// Passenger-reported readiness. Flight data never changes these on its own.
+export const STATUS_ORDER = ['not_landed', 'landed', 'collecting_luggage', 'walking', 'at_pickup'];
 export const STATUS_LABEL = {
-  not_landed: 'Not landed yet',
-  collecting_luggage: 'Collecting luggage',
+  not_landed: 'Awaiting arrival',
+  landed: 'Flight landed',
+  collecting_luggage: 'Collecting baggage',
   walking: 'Walking to pickup',
-  at_pickup: 'At the pickup point',
-  delayed: 'Delayed',
+  at_pickup: 'Ready for pickup',
+  delayed: 'Needs more time',
   departed: 'Departed',
-  left: 'Left the ride',
+  left: 'Unable to continue',
 };
 
 export function statusMessage(name, status, delayMinutes) {
   switch (status) {
-    case 'collecting_luggage': return `${name} is collecting luggage`;
+    case 'landed': return `${name} has landed`;
+    case 'collecting_luggage': return `${name} is collecting baggage`;
     case 'walking': return `${name} is walking to the pickup point`;
-    case 'at_pickup': return `${name} is at the pickup point`;
-    case 'delayed': return `${name} is delayed by about ${delayMinutes} min`;
+    case 'at_pickup': return `${name} is ready at the pickup point`;
+    case 'delayed': return `${name} needs about ${delayMinutes} more min`;
     case 'not_landed': return `${name} hasn't landed yet`;
+    case 'left': return `${name} can't continue and left the ride`;
     default: return `${name}: ${STATUS_LABEL[status] || status}`;
   }
 }
@@ -28,11 +33,27 @@ const RIDE_EVENT = 'sanchari:ride';
 const addMinutes = (iso, m) => new Date(new Date(iso).getTime() + m * 60000).toISOString();
 const fmtTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-/** Proposed departure: latest arrival + luggage buffer. Deadline: departure + wait. */
-export function planTimes(arrivalTimes) {
-  const latest = Math.max(...arrivalTimes.map((t) => new Date(t).getTime()));
-  const proposed = new Date(latest + RIDE_CONFIG.luggageBufferMinutes * 60000).toISOString();
+/**
+ * Proposed departure: when the last rider is likely ready (best known arrival — actual,
+ * estimated or scheduled — plus their baggage time), rounded up to 5 minutes.
+ */
+export function planTimes(trips) {
+  const latest = Math.max(...trips.map((t) => new Date(readyAt(t)).getTime()));
+  const five = 5 * 60000;
+  const proposed = new Date(Math.ceil(latest / five) * five).toISOString();
   return { proposed, deadline: addMinutes(proposed, RIDE_CONFIG.waitAfterDepartureMinutes) };
+}
+
+function memberFlight(t) {
+  const f = t.flight;
+  if (!f) return { flightDesignator: t.flightNumber || null, flightVerification: t.flightNumber ? 'unverified' : null, flightBestArrival: null, flightBestKind: null };
+  const best = effectiveArrival(t);
+  return {
+    flightDesignator: f.designator,
+    flightVerification: f.verification,
+    flightBestArrival: f.verification === 'verified' ? best.time : null,
+    flightBestKind: f.verification === 'verified' ? best.basis : null,
+  };
 }
 
 function optionSnapshot(o) {
@@ -96,6 +117,10 @@ function mapLive(group, members, updates, myTripId) {
       confirmed: m.confirmed,
       isMe: m.trip_id === myTripId,
       isDemo: false,
+      flightDesignator: m.flight_designator,
+      flightVerification: m.flight_verification,
+      flightBestArrival: m.flight_best_arrival,
+      flightBestKind: m.flight_best_kind,
       updatedAt: m.updated_at,
     })),
     updates: updates.map((u) => ({ id: u.id, at: u.created_at, text: u.message, kind: u.kind })),
@@ -124,7 +149,7 @@ async function liveUpdate(text, ride, kind = 'info') {
 /* ───────────────────────── Public API ───────────────────────── */
 
 export async function createRide({ me, others, option }) {
-  const { proposed, deadline } = planTimes([me, ...others].map((t) => t.arrivalTime));
+  const { proposed, deadline } = planTimes([me, ...others]);
   const shares = Object.fromEntries(option.members.map((m) => [m.tripId, m.cost]));
 
   if (!IS_LIVE) {
@@ -153,6 +178,8 @@ export async function createRide({ me, others, option }) {
         confirmed: true,
         isMe: i === 0,
         isDemo: i !== 0,
+        readyAt: readyAt(t),
+        ...memberFlight(t),
         updatedAt: new Date().toISOString(),
       })),
       updates: [],
@@ -299,7 +326,7 @@ export async function leaveRide(ride) {
 /** Demo only: move the least-progressed fictional passenger one step forward. */
 export async function simulateProgress(ride) {
   return mutateDemo(ride.id, (r) => {
-    const rank = (s) => (s === 'delayed' ? 1 : STATUS_ORDER.indexOf(s));
+    const rank = (s) => (s === 'delayed' ? 2 : STATUS_ORDER.indexOf(s));
     const others = r.members.filter((m) => !m.isMe && rank(m.pickupStatus) >= 0 && rank(m.pickupStatus) < STATUS_ORDER.length - 1);
     if (!others.length) return;
     others.sort((a, b) => rank(a.pickupStatus) - rank(b.pickupStatus));
@@ -353,4 +380,24 @@ export function subscribeToRide(id, myTripId, onChange) {
     clearInterval(poll);
     supabase.removeChannel(channel);
   };
+}
+
+/**
+ * Demo mode: record a refreshed flight on my ride member and post one update when the
+ * best-known arrival changes (identical refreshes are ignored). Never changes ride times.
+ * Live mode does this on the server (journey flight-status endpoint / scheduled refresh).
+ */
+export async function recordMyFlight(ride, flight) {
+  if (IS_LIVE || flight?.verification !== 'verified') return ride;
+  const best = flight.actualArrival || flight.estimatedArrival || flight.scheduledArrival;
+  const kind = flight.actualArrival ? 'actual' : flight.estimatedArrival ? 'estimated' : 'scheduled';
+  const me = ride.members.find((m) => m.isMe);
+  if (me.flightBestArrival === best && me.flightBestKind === kind) return ride;
+  return mutateDemo(ride.id, (r) => {
+    const m = r.members.find((x) => x.isMe);
+    const was = m.flightBestArrival;
+    Object.assign(m, { flightDesignator: flight.designator, flightVerification: 'verified', flightBestArrival: best, flightBestKind: kind, updatedAt: new Date().toISOString() });
+    const label = kind === 'actual' ? 'landed at' : kind === 'estimated' ? 'now estimated' : 'scheduled';
+    pushUpdate(r, `${m.displayName}’s flight ${flight.designator} ${label} ${fmtTime(best)}${was && was !== best ? ` (was ${fmtTime(was)})` : ''}`, 'info');
+  });
 }

@@ -38,6 +38,7 @@ export function PassengerCard({ match, myArrival, selected, onToggle, disabledRe
             <span><PlaneLanding size={15} aria-hidden /> Lands {fmtTime(trip.arrivalTime)} · {diff === 0 ? 'same time as you' : `${Math.abs(diff)} min ${diff > 0 ? 'after' : 'before'} you`}</span>
             <span><MapPin size={15} aria-hidden /> {trip.destinationName}</span>
             <span><Luggage size={15} aria-hidden /> {trip.luggageCount} {trip.luggageCount === 1 ? 'bag' : 'bags'}</span>
+            {trip.flightNumber && <span>{trip.flightNumber} · {trip.flight?.verification === 'verified' ? 'verified flight' : trip.isDemo ? 'demo, unverified' : 'unverified'}</span>}
           </div>
         </div>
       </div>
