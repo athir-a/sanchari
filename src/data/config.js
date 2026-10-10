@@ -7,7 +7,9 @@ export const MATCHING_CONFIG = {
   // Straight-line distance between two drop-offs above which riders aren't paired.
   maxDropoffGapKm: 7,
   // Extra minutes a shared route may add for either rider.
-  maxDetourMinutes: 30,
+  maxDetourMinutes: 25,
+  // Riders can pick how much extra time they accept; the stricter of two riders wins.
+  detourChoices: [10, 15, 25, 40],
   // Co-passengers the user can add (user + 3 = 4 people).
   maxCoPassengers: 3,
   weights: {
@@ -29,12 +31,13 @@ export const MATCHING_CONFIG = {
 export const FARE_ASSUMPTIONS = {
   currency: 'INR',
   roadFactor: 1.35, // road km ≈ straight-line km × this
+  balancedClusterKm: 4, // Balanced: riders this close share one stop
   cab: {
     airportPickupFee: 120,
     base: 100,
     perKm: 22,
-    firstLegKmh: 32, // airport → first stop
-    cityKmh: 20, // between stops
+    firstLegKmh: 40, // airport → first stop (mostly NH 544)
+    cityKmh: 25, // between stops
     dwellMinutesPerStop: 3,
   },
   vehicles: {
@@ -45,9 +48,9 @@ export const FARE_ASSUMPTIONS = {
     base: 20,
     perKm: 2.5,
     cap: 90,
-    kmh: 20,
-    waitMinutes: 8,
-    secondTransferAboveKm: 9,
+    kmh: 38, // KSRTC bus / Kochi Metro incl. stops
+    waitMinutes: 10,
+    secondTransferAboveKm: 70,
   },
   auto: {
     base: 30,

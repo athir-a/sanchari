@@ -1,6 +1,6 @@
 import { FARE_ASSUMPTIONS as F, PREFERENCES } from '../data/config.js';
 import { getAirport, getZone } from '../data/airports.js';
-import { roadKm, orderStops, googleMapsDirectionsUrl } from './geo.js';
+import { roadKm, haversineKm, orderStops, googleMapsDirectionsUrl } from './geo.js';
 
 const round = (n) => Math.round(n);
 
@@ -85,28 +85,59 @@ function doorPoint(trip, isMe) {
 }
 
 /**
- * BALANCED: the cab makes ONE shared stop, chosen from the riders' own areas so that
- * the group's total cost (cab + everyone's last-mile auto) is lowest.
+ * BALANCED: riders whose areas are within `balancedClusterKm` share ONE
+ * stop, chosen from their own areas so the cluster's cab + last-mile auto cost is lowest.
+ * Riders further along the corridor get their own stop, so nobody is left with a long auto.
+ * Returns a map of trip id → stop.
  */
-function balancedSharedStop(members, airport) {
-  let best = null;
-  members.forEach((candidate) => {
-    const stop = { key: `shared:${candidate.id}`, name: candidate.destinationName, lat: candidate.destinationLat, lng: candidate.destinationLng };
-    const bags = members.reduce((s, m) => s + (m.luggageCount || 0), 0);
-    const vehicle = vehicleFor(members.length, bags) || F.vehicles.suv;
-    const cost = cabFare(roadKm(airport, stop), vehicle) + members.reduce((s, m) => s + onwardLeg('balanced', stop, tripPoint(m)).fare, 0);
-    if (!best || cost < best.cost) best = { stop, cost };
+function balancedStops(members, airport) {
+  const bags = members.reduce((s, m) => s + (m.luggageCount || 0), 0);
+  const vehicle = vehicleFor(members.length, bags) || F.vehicles.suv;
+  const byDistance = [...members].sort((a, b) => roadKm(airport, tripPoint(a)) - roadKm(airport, tripPoint(b)));
+  const clusters = [];
+  byDistance.forEach((m) => {
+    const c = clusters.find((cl) => cl.every((o) => haversineKm(tripPoint(o), tripPoint(m)) <= F.balancedClusterKm));
+    if (c) c.push(m);
+    else clusters.push([m]);
   });
-  return best.stop;
+  const result = new Map();
+  clusters.forEach((cluster) => {
+    let best = null;
+    cluster.forEach((candidate) => {
+      const stop = { key: `shared:${candidate.id}`, name: candidate.destinationName, lat: candidate.destinationLat, lng: candidate.destinationLng };
+      const cost = cabFare(roadKm(airport, stop), vehicle) + cluster.reduce((s, m) => s + onwardLeg('balanced', stop, tripPoint(m)).fare, 0);
+      if (!best || cost < best.cost) best = { stop, cost };
+    });
+    cluster.forEach((m) => result.set(m.id, best.stop));
+  });
+  return result;
 }
 
-function dropPointFor(kind, trip, isMe, sharedStop) {
+function dropPointFor(kind, trip, isMe, sharedStops) {
   if (kind === 'cheapest') {
     const zone = getZone(trip.destinationZone);
     return { key: `hub:${zone.hub.name}`, name: zone.hub.name, lat: zone.hub.lat, lng: zone.hub.lng, transitMode: zone.hub.mode };
   }
-  if (kind === 'balanced') return sharedStop;
+  if (kind === 'balanced') return sharedStops.get(trip.id);
   return doorPoint(trip, isMe);
+}
+
+/**
+ * Proportionate split: the pickup fee and base fare are shared equally; each stretch of
+ * road is shared only by the riders still in the cab on that stretch. Shares add up to
+ * the cab fare.
+ */
+export function splitCabFare(ordered, memberDrop, byKey, members, vehicle) {
+  const n = members.length;
+  const shares = new Map(members.map((m) => [m.id, ((F.cab.airportPickupFee + F.cab.base) * vehicle.multiplier) / n]));
+  let prevKm = 0;
+  ordered.forEach((stop, i) => {
+    const legCost = F.cab.perKm * (stop.cumKm - prevKm) * vehicle.multiplier;
+    prevKm = stop.cumKm;
+    const aboard = members.filter((m) => byKey.get(memberDrop.get(m.id)).index >= i);
+    aboard.forEach((m) => shares.set(m.id, shares.get(m.id) + legCost / aboard.length));
+  });
+  return shares;
 }
 
 /**
@@ -123,9 +154,9 @@ export function buildOption(kind, me, others) {
   // Unique drop points, visited nearest-first.
   const drops = new Map();
   const memberDrop = new Map();
-  const sharedStop = kind === 'balanced' ? balancedSharedStop(members, airport) : null;
+  const sharedStops = kind === 'balanced' ? balancedStops(members, airport) : null;
   members.forEach((m, i) => {
-    const p = dropPointFor(kind, m, i === 0, sharedStop);
+    const p = dropPointFor(kind, m, i === 0, sharedStops);
     if (!drops.has(p.key)) drops.set(p.key, { ...p, riders: [] });
     drops.get(p.key).riders.push(m);
     memberDrop.set(m.id, p.key);
@@ -135,6 +166,7 @@ export function buildOption(kind, me, others) {
   const totalKm = ordered.length ? ordered[ordered.length - 1].cumKm : 0;
   const cab = vehicle ? cabFare(totalKm, vehicle) : null;
 
+  const shares = vehicle ? splitCabFare(ordered, memberDrop, byKey, members, vehicle) : null;
   const perMember = members.map((m) => {
     const stop = byKey.get(memberDrop.get(m.id));
     const leg = onwardLeg(kind, stop, tripPoint(m), stop.transitMode);
@@ -143,8 +175,8 @@ export function buildOption(kind, me, others) {
       trip: m,
       stop,
       leg,
-      cabShare: cab != null ? cab / n : null,
-      cost: cab != null ? round(cab / n + leg.fare) : null,
+      cabShare: shares ? shares.get(m.id) : null,
+      cost: shares ? round(shares.get(m.id) + leg.fare) : null,
       minutes: round(cabMinutes + leg.minutes),
       detourMinutes: Math.max(0, round(cabMinutes - directCabMinutes(airport, stop))),
     };
@@ -167,11 +199,13 @@ export function buildOption(kind, me, others) {
   if (kind === 'cheapest') {
     dropArrangement = mine.leg.mode === 'Walk' || !mine.leg.mode
       ? `Cab drops you at ${mine.stop.name}, a short walk from your destination.`
-      : `Cab drops you at ${mine.stop.name}. Continue by ${mine.leg.mode.toLowerCase()} (~${mine.leg.km.toFixed(1)} km).`;
+      : `Cab drops you at ${mine.stop.name}. Continue by ${mine.leg.mode === 'Bus' ? 'KSRTC bus' : mine.leg.mode.toLowerCase()} (~${mine.leg.km.toFixed(0)} km).`;
   } else if (kind === 'balanced') {
     if (mine.leg.mode === 'Auto') dropArrangement = `One shared stop at ${mine.stop.name}. Short auto (~${mine.leg.km.toFixed(1)} km) to your door.`;
     else if (mine.leg.mode === 'Walk') dropArrangement = `One shared stop at ${mine.stop.name}, a short walk from your door.`;
-    else dropArrangement = `One shared stop in your own area (${mine.stop.name}). Others continue by auto.`;
+    else dropArrangement = ordered.length > 1
+      ? `Cab drops you in your own area (${mine.stop.name}). Riders nearby share a stop and finish by auto.`
+      : `One shared stop in your own area (${mine.stop.name}). Others finish by auto.`;
   } else {
     dropArrangement = `Cab drops everyone at their own address. You're stop ${mine.stop.index + 1} of ${ordered.length}.`;
   }

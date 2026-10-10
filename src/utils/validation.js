@@ -1,4 +1,5 @@
-import { getDestination } from '../data/airports.js';
+import { getDestination, getAirport } from '../data/airports.js';
+import { MATCHING_CONFIG } from '../data/config.js';
 
 const FLIGHT_RE = /^[A-Z0-9]{2}\s?\d{1,4}[A-Z]?$/i;
 
@@ -13,6 +14,7 @@ export function validateArrival(form, now = Date.now()) {
   }
 
   if (!form.airportCode) e.airportCode = 'Choose the airport you’re landing at.';
+  else if (!getAirport(form.airportCode)) e.airportCode = 'Sanchari currently serves Cochin International Airport (COK) only.';
 
   if (!form.arrivalLocal) {
     e.arrivalLocal = 'Enter when you expect to land.';
@@ -32,6 +34,7 @@ export function validateArrival(form, now = Date.now()) {
   const bags = Number(form.luggageCount);
   if (!Number.isInteger(bags) || bags < 0 || bags > 6) e.luggageCount = 'Bags must be between 0 and 6.';
 
+  if (!MATCHING_CONFIG.detourChoices.includes(Number(form.maxDetourMinutes))) e.maxDetourMinutes = 'Choose how much extra time you’ll accept.';
   if (!['cheapest', 'balanced', 'direct'].includes(form.preference)) e.preference = 'Choose how you’d like to travel.';
   return e;
 }

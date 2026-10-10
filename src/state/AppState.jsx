@@ -5,12 +5,13 @@ import { MATCHING_CONFIG } from '../data/config.js';
 export const EMPTY_FORM = {
   displayName: '',
   flightNumber: '',
-  airportCode: 'BLR',
+  airportCode: 'COK',
   arrivalLocal: '',
   destinationId: '',
   dropoffAddress: '',
   luggageCount: 1,
   preference: 'balanced',
+  maxDetourMinutes: 25,
 };
 
 const INITIAL = {

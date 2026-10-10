@@ -6,12 +6,14 @@ import RideComparison from './pages/RideComparison.jsx';
 import RideConfirmation from './pages/RideConfirmation.jsx';
 import RideCoordination from './pages/RideCoordination.jsx';
 import { LiveInviteCheck } from './components/LiveInviteCheck.jsx';
+import { SiteLayout } from './components/SiteLayout.jsx';
 
 export default function App() {
   return (
     <AppStateProvider>
       <BrowserRouter>
         <LiveInviteCheck />
+        <SiteLayout>
         <Routes>
           <Route path="/" element={<ArrivalSetup />} />
           <Route path="/matches" element={<MatchResults />} />
@@ -20,6 +22,7 @@ export default function App() {
           <Route path="/ride" element={<RideCoordination />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </SiteLayout>
       </BrowserRouter>
     </AppStateProvider>
   );

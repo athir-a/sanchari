@@ -22,6 +22,7 @@ create table if not exists public.trips (
   dropoff_address  text check (dropoff_address is null or char_length(dropoff_address) <= 120),
   luggage_count    integer not null default 1 check (luggage_count between 0 and 6),
   preference       text not null check (preference in ('cheapest', 'balanced', 'direct')),
+  max_detour_minutes integer not null default 25 check (max_detour_minutes between 5 and 60),
   status           text not null default 'searching' check (status in ('searching', 'matched', 'completed', 'cancelled')),
   created_at       timestamptz not null default now()
 );
@@ -94,13 +95,13 @@ returns table (
   id uuid, display_name text, flight_number text, airport_code text, arrival_time timestamptz,
   destination_id text, destination_name text, destination_zone text,
   destination_lat numeric, destination_lng numeric, dropoff_address text,
-  luggage_count integer, preference text, status text
+  luggage_count integer, preference text, max_detour_minutes integer, status text
 )
 language sql stable security definer set search_path = public as $$
   select t.id, t.display_name, null::text, t.airport_code, t.arrival_time,
          t.destination_id, t.destination_name, t.destination_zone,
          round(t.destination_lat, 2), round(t.destination_lng, 2), null::text,
-         t.luggage_count, t.preference, t.status
+         t.luggage_count, t.preference, t.max_detour_minutes, t.status
   from trips t
   where auth.uid() is not null
     and t.user_id <> auth.uid()

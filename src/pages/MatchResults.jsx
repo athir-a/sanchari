@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { ArrowRight, Clock, MapPinned, RefreshCw, SearchX, Sparkles, ChevronDown } from 'lucide-react';
-import { AppShell } from '../components/AppShell.jsx';
-import { Button, Notice } from '../components/ui.jsx';
-import { PassengerCard } from '../components/PassengerCard.jsx';
+import { ArrowRight, MapPinned, RefreshCw, SearchX, Sparkles } from 'lucide-react';
+import { Button, Note, PageHeading, JourneySteps, TextButton, useDocumentTitle } from '../components/ui.jsx';
+import { PassengerCard, Avatar } from '../components/PassengerCard.jsx';
 import { useAppState } from '../state/AppState.jsx';
 import { getCandidateTrips, saveTrip } from '../services/tripService.js';
 import { IS_LIVE } from '../services/supabaseClient.js';
@@ -14,12 +13,12 @@ import { tripFromForm } from '../utils/trip.js';
 import { fmtDateTime } from '../utils/timeFormatting.js';
 
 export default function MatchResults() {
+  useDocumentTitle('Travellers on your route');
   const { state, update } = useAppState();
   const navigate = useNavigate();
   const { trip, arrivalWindow, selected } = state;
   const [candidates, setCandidates] = useState(null);
   const [error, setError] = useState('');
-  const [showRejected, setShowRejected] = useState(false);
 
   const load = useCallback(async () => {
     if (!trip) return;
@@ -66,125 +65,128 @@ export default function MatchResults() {
 
   const sameAirportRejected = result?.rejected.filter((r) => r.code !== 'airport') ?? [];
   const otherAirport = result ? result.rejected.length - sameAirportRejected.length : 0;
+  const count = result?.matches.length ?? 0;
 
   return (
-    <AppShell
-      step={1}
-      back="/"
-      title="Travellers near you"
-      footer={
-        <Button size="lg" className="w-full" disabled={!selected.length} onClick={() => navigate('/compare')}>
-          {selected.length ? `Compare options · ${selected.length + 1} riders` : 'Add someone to ride with'}
-          {selected.length > 0 && <ArrowRight className="size-5" aria-hidden />}
-        </Button>
-      }
-    >
-      <section className="card mb-4 flex items-center gap-3 p-3.5">
-        <div className="min-w-0 flex-1 text-[13px] leading-snug">
-          <p className="font-bold text-ink">{trip.airportCode} → {trip.destinationName}</p>
-          <p className="text-mute">
-            Lands {fmtDateTime(trip.arrivalTime)} · {trip.luggageCount} bags · {PREFERENCES[trip.preference].label}
-          </p>
-        </div>
-        <Button variant="secondary" size="sm" onClick={() => navigate('/')}>Edit</Button>
-      </section>
+    <>
+      <PageHeading eyebrow="Step 02 · Matches" title={<>Travellers on <em>your</em> route.</>}>
+        People landing at {trip.airportCode} within ±{arrivalWindow} minutes of you whose drop-off is near yours or along the way to {trip.destinationName}.
+      </PageHeading>
+      <JourneySteps current={1} />
 
-      <div className="mb-4 flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 text-[13px] font-semibold text-ink-2">
-          <Clock className="size-4 text-mute" aria-hidden /> Landing within ±{arrivalWindow} min
-        </p>
-        <button
-          className="min-h-[40px] rounded-xl px-3 text-[13px] font-bold text-teal hover:bg-teal-soft"
-          onClick={() => setWindow(widened ? MATCHING_CONFIG.arrivalWindowMinutes : MATCHING_CONFIG.widenedArrivalWindowMinutes)}
-        >
-          {widened ? `Back to ±${MATCHING_CONFIG.arrivalWindowMinutes}` : `Widen to ±${MATCHING_CONFIG.widenedArrivalWindowMinutes}`}
-        </button>
-      </div>
-
-      {error && (
-        <Notice tone="rose" title="Couldn’t load travellers" className="mb-4">
-          {error}{' '}
-          <button className="font-bold underline" onClick={load}>Try again</button>
-        </Notice>
-      )}
-
-      {!result && !error && (
-        <div className="grid gap-3" aria-busy="true" aria-label="Finding travellers">
-          {[0, 1].map((i) => <div key={i} className="card h-40 animate-pulse bg-white/60" />)}
-        </div>
-      )}
-
-      {result && result.matches.length > 0 && (
-        <>
-          <p className="mb-3 text-[15px] text-ink-2">
-            <span className="font-bold text-ink">{result.matches.length} {result.matches.length === 1 ? 'traveller fits' : 'travellers fit'}</span> your route. Add one or more.
-          </p>
-          <div className="grid gap-3">
-            {result.matches.map((m) => {
-              const isSel = selected.some((s) => s.id === m.trip.id);
-              const others = selected.filter((s) => s.id !== m.trip.id);
-              const check = isSel ? { ok: true } : canJoinGroup(trip, others, m.trip);
-              return (
-                <PassengerCard
-                  key={m.trip.id}
-                  match={m}
-                  myArrival={trip.arrivalTime}
-                  selected={isSel}
-                  onToggle={() => toggle(m.trip)}
-                  disabledReason={check.ok ? null : check.reason}
-                />
-              );
-            })}
-          </div>
-        </>
-      )}
-
-      {result && result.matches.length === 0 && (
-        <div className="card rise p-6 text-center">
-          <SearchX className="mx-auto size-10 text-faint" aria-hidden />
-          <h2 className="mt-3 text-lg font-bold">No one fits your route yet</h2>
-          <p className="mt-1 text-[14px] text-mute">Travellers need to land within ±{arrivalWindow} min and head near {trip.destinationName}.</p>
-          <div className="mt-5 grid gap-2">
-            {!widened && (
-              <Button variant="primary" onClick={() => setWindow(MATCHING_CONFIG.widenedArrivalWindowMinutes)}>
-                <RefreshCw className="size-4" aria-hidden /> Widen to ±{MATCHING_CONFIG.widenedArrivalWindowMinutes} min
-              </Button>
-            )}
-            <Button variant="secondary" onClick={() => navigate('/')}>
-              <MapPinned className="size-4" aria-hidden /> Change destination
-            </Button>
-            {!IS_LIVE && (
-              <Button variant="ghost" onClick={loadDemoTrip}>
-                <Sparkles className="size-4 text-amber" aria-hidden /> View demo matches
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {result && sameAirportRejected.length > 0 && (
-        <section className="mt-6">
-          <button
-            className="flex min-h-[44px] w-full items-center justify-between rounded-xl px-1 text-left text-[13px] font-bold text-mute"
-            onClick={() => setShowRejected((v) => !v)}
-            aria-expanded={showRejected}
-          >
-            Not matched ({sameAirportRejected.length}) — see why
-            <ChevronDown className={`size-4 transition ${showRejected ? 'rotate-180' : ''}`} aria-hidden />
-          </button>
-          {showRejected && (
-            <ul className="card mt-1 divide-y divide-line/70 text-[13px]">
-              {sameAirportRejected.map((r) => (
-                <li key={r.trip.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                  <span className="font-semibold">{r.trip.displayName}</span>
-                  <span className="text-right text-mute">{r.reason}</span>
-                </li>
-              ))}
-              {otherAirport > 0 && <li className="px-4 py-2.5 text-mute">{otherAirport} more land at other airports.</li>}
-            </ul>
+      <section className="workspace">
+        <div className="stack" aria-live="polite">
+          {error && (
+            <Note tone="danger" title="Couldn’t load travellers" role="alert">
+              {error} <TextButton onClick={load}>Try again</TextButton>
+            </Note>
           )}
-        </section>
-      )}
-    </AppShell>
+
+          {!result && !error && (
+            <div className="stack" aria-busy="true" aria-label="Finding travellers">
+              <div className="skeleton" />
+              <div className="skeleton" />
+            </div>
+          )}
+
+          {result && count > 0 && (
+            <>
+              <p style={{ color: 'var(--ink)' }}>
+                <strong>{count} {count === 1 ? 'traveller fits' : 'travellers fit'}</strong> your route, best match first. Add one or more.
+              </p>
+              {result.matches.map((m) => {
+                const isSel = selected.some((s) => s.id === m.trip.id);
+                const others = selected.filter((s) => s.id !== m.trip.id);
+                const check = isSel ? { ok: true } : canJoinGroup(trip, others, m.trip);
+                return (
+                  <PassengerCard
+                    key={m.trip.id}
+                    match={m}
+                    myArrival={trip.arrivalTime}
+                    selected={isSel}
+                    onToggle={() => toggle(m.trip)}
+                    disabledReason={check.ok ? null : check.reason}
+                  />
+                );
+              })}
+            </>
+          )}
+
+          {result && count === 0 && (
+            <div className="result-card empty">
+              <span className="icon-box accent"><SearchX size={22} aria-hidden /></span>
+              <h2>No one fits your route yet.</h2>
+              <p>Travellers need to land within ±{arrivalWindow} minutes of you and be heading towards {trip.destinationName} or along the way.</p>
+              <div className="button-row">
+                {!widened && (
+                  <Button onClick={() => setWindow(MATCHING_CONFIG.widenedArrivalWindowMinutes)}>
+                    <RefreshCw size={18} aria-hidden /> Widen to ±{MATCHING_CONFIG.widenedArrivalWindowMinutes} min
+                  </Button>
+                )}
+                <Button variant="secondary" onClick={() => navigate('/')}>
+                  <MapPinned size={18} aria-hidden /> Change destination
+                </Button>
+                {!IS_LIVE && (
+                  <Button variant="secondary" onClick={loadDemoTrip}>
+                    <Sparkles size={18} aria-hidden /> View demo matches
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <aside className="quick-panel" aria-label="Your trip and selection">
+          <div>
+            <p className="eyebrow">Your trip</p>
+            <h3>{trip.airportCode} → {trip.destinationName}</h3>
+            <p className="small">Lands {fmtDateTime(trip.arrivalTime)} · {trip.luggageCount} bags · {PREFERENCES[trip.preference].label} · up to {trip.maxDetourMinutes} min detour</p>
+            <TextButton onClick={() => navigate('/')}>Edit trip details</TextButton>
+          </div>
+          <div className="divider" />
+          <div>
+            <h3>Arrival window</h3>
+            <p className="small">Showing travellers landing within ±{arrivalWindow} minutes of you.</p>
+            <TextButton onClick={() => setWindow(widened ? MATCHING_CONFIG.arrivalWindowMinutes : MATCHING_CONFIG.widenedArrivalWindowMinutes)}>
+              {widened ? `Narrow back to ±${MATCHING_CONFIG.arrivalWindowMinutes} min` : `Widen to ±${MATCHING_CONFIG.widenedArrivalWindowMinutes} min`}
+            </TextButton>
+          </div>
+          <div className="divider" />
+          <div className="stack-sm">
+            <h3>Your ride so far</h3>
+            {selected.length ? (
+              <ul className="member-list">
+                <li><Avatar name={trip.displayName} me small /><span className="who"><span className="name">You</span><p>to {trip.destinationName}</p></span></li>
+                {selected.map((s) => (
+                  <li key={s.id}><Avatar name={s.displayName} small /><span className="who"><span className="name">{s.displayName}</span><p>to {s.destinationName}</p></span></li>
+                ))}
+              </ul>
+            ) : (
+              <p className="small">Choose “Ride together” on anyone you’d like to share with.</p>
+            )}
+            <Button block disabled={!selected.length} onClick={() => navigate('/compare')}>
+              Compare fare options <ArrowRight size={18} aria-hidden />
+            </Button>
+          </div>
+
+          {result && sameAirportRejected.length > 0 && (
+            <details className="disclosure">
+              <summary>Not matched ({sameAirportRejected.length}) — see why<span className="plus" aria-hidden>+</span></summary>
+              <div className="disclosure-body">
+                <ul className="feed">
+                  {sameAirportRejected.map((r) => (
+                    <li key={r.trip.id} style={{ gridTemplateColumns: '5.5rem 1fr' }}>
+                      <strong>{r.trip.displayName}</strong>
+                      <span className="muted">{r.reason}</span>
+                    </li>
+                  ))}
+                </ul>
+                {otherAirport > 0 && <p className="small">{otherAirport} more {otherAirport === 1 ? 'traveller lands' : 'travellers land'} at other airports.</p>}
+              </div>
+            </details>
+          )}
+        </aside>
+      </section>
+    </>
   );
 }

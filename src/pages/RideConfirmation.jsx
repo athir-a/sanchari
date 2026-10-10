@@ -1,26 +1,14 @@
 import { useMemo, useRef, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { CheckCircle2, MapPin, Clock, Route, Wallet, Info, Users } from 'lucide-react';
-import { AppShell } from '../components/AppShell.jsx';
-import { Button, Notice } from '../components/ui.jsx';
+import { ArrowLeft, CheckCircle2, Info } from 'lucide-react';
+import { Button, Note, PageHeading, JourneySteps, useDocumentTitle } from '../components/ui.jsx';
 import { useAppState } from '../state/AppState.jsx';
 import { buildOption, formatINR } from '../utils/fareCalculation.js';
 import { createRide, planTimes } from '../services/rideService.js';
 import { fmtTime, fmtDateTime } from '../utils/timeFormatting.js';
 
-function Row({ icon: Icon, label, children }) {
-  return (
-    <div className="flex gap-3 py-3">
-      <Icon className="mt-0.5 size-5 shrink-0 text-teal" aria-hidden />
-      <div className="min-w-0">
-        <p className="text-[12px] font-bold uppercase tracking-wide text-mute">{label}</p>
-        <div className="mt-0.5 text-[15px] text-ink">{children}</div>
-      </div>
-    </div>
-  );
-}
-
 export default function RideConfirmation() {
+  useDocumentTitle('Confirm your shared ride');
   const { state, update } = useAppState();
   const navigate = useNavigate();
   const { trip, selected, optionKind } = state;
@@ -55,51 +43,74 @@ export default function RideConfirmation() {
   }
 
   return (
-    <AppShell
-      step={3}
-      back="/compare"
-      title="Confirm shared ride"
-      footer={
-        <Button size="lg" className="w-full" onClick={confirm} loading={busy}>
-          <CheckCircle2 className="size-5" aria-hidden /> {busy ? 'Confirming…' : 'Confirm I’m in'}
-        </Button>
-      }
-    >
-      <section className="card rise divide-y divide-line/70 px-4">
-        <Row icon={Users} label={`${selected.length + 1} passengers`}>
-          You, {selected.map((s) => s.displayName).join(', ')}
-        </Row>
-        <Row icon={MapPin} label="Meet at">
-          {option.pickupPoint}
-        </Row>
-        <Row icon={Clock} label="Proposed departure">
-          {fmtDateTime(times.proposed)}
-          <p className="text-[13px] text-mute">Group waits until {fmtTime(times.deadline)}, then leaves with whoever is there.</p>
-        </Row>
-        <Row icon={Route} label={`${option.label} · drop-off order`}>
-          <ol className="mt-1 grid gap-1 text-[14px]">
-            {option.stops.map((s, i) => (
-              <li key={s.name + i} className="flex gap-2">
-                <span className="tabnum grid size-5 shrink-0 place-items-center rounded-full bg-sand text-[11px] font-bold">{i + 1}</span>
-                <span>{s.name} <span className="text-mute">· {s.riders.map((r) => (r === trip.displayName ? 'you' : r)).join(', ')}</span></span>
-              </li>
-            ))}
-          </ol>
-          <p className="mt-1.5 text-[13px] text-mute">{option.dropArrangement}</p>
-        </Row>
-        <Row icon={Wallet} label="Your estimated share">
-          <span className="display text-2xl">{formatINR(option.perPerson)}</span>
-          <p className="text-[13px] text-mute">
-            {option.detourMinutes ? `About ${option.detourMinutes} min of detour` : 'No detour for you'} · save ~{formatINR(Math.max(0, option.savings))} vs a solo cab
-          </p>
-        </Row>
+    <>
+      <PageHeading eyebrow="Step 04 · Confirm" title={<>Review your <em>shared</em> ride.</>}>
+        Check the details below. Confirming tells your co-passengers you’re in — it doesn’t book a taxi or take payment.
+      </PageHeading>
+      <JourneySteps current={3} />
+
+      <section className="workspace">
+        <div className="result-card">
+          <p className="eyebrow">{option.label} · {selected.length + 1} riders</p>
+          <dl className="summary-list">
+            <div><dt>Passengers</dt><dd>You, {selected.map((s) => s.displayName).join(', ')}</dd></div>
+            <div><dt>Meet at</dt><dd>{option.pickupPoint}<p>Cochin International Airport</p></dd></div>
+            <div>
+              <dt>Proposed departure</dt>
+              <dd>{fmtDateTime(times.proposed)}<p>The group waits until {fmtTime(times.deadline)}, then leaves with whoever is there.</p></dd>
+            </div>
+            <div>
+              <dt>Drop-off order</dt>
+              <dd>
+                <ol className="stop-list">
+                  {option.stops.map((s, i) => (
+                    <li key={s.name + i}>
+                      <span className="step-num">{i + 1}</span>
+                      <span>{s.name} <span className="muted">· {s.riders.map((r) => (r === trip.displayName ? 'you' : r)).join(', ')}</span></span>
+                    </li>
+                  ))}
+                </ol>
+                <p style={{ marginTop: '0.5rem' }}>{option.dropArrangement}</p>
+              </dd>
+            </div>
+            <div>
+              <dt>Your estimated share</dt>
+              <dd>
+                <span className="price tabnum">{formatINR(option.perPerson)}</span>
+                <p style={{ marginTop: '0.4rem' }}>
+                  {option.detourMinutes ? `About ${option.detourMinutes} min of detour` : 'No detour for you'} · save ~{formatINR(Math.max(0, option.savings))} vs a solo cab
+                </p>
+              </dd>
+            </div>
+            <div>
+              <dt>Everyone’s share</dt>
+              <dd>
+                <ul className="check-list compact">
+                  {option.members.map((m) => (
+                    <li key={m.tripId}>{m.tripId === trip.id ? 'You' : m.displayName}: {formatINR(m.cost)}{m.onward ? ` incl. ${m.onward === 'Bus' ? 'KSRTC bus' : m.onward.toLowerCase()}` : ''}</li>
+                  ))}
+                </ul>
+              </dd>
+            </div>
+          </dl>
+        </div>
+
+        <aside className="quick-panel" aria-label="Confirm">
+          <div>
+            <p className="eyebrow">Before you confirm</p>
+            <h3>This is a proposal, not a booking</h3>
+            <p className="small">No taxi is booked and no payment is taken. One of you books the cab at the pickup point and you settle the split between yourselves.</p>
+          </div>
+          {error && <Note tone="danger" title="Couldn’t confirm" role="alert">{error}</Note>}
+          <Button block onClick={confirm} loading={busy}>
+            <CheckCircle2 size={18} aria-hidden /> {busy ? 'Confirming…' : 'Confirm I’m in'}
+          </Button>
+          <Button block variant="secondary" onClick={() => navigate('/compare')}>
+            <ArrowLeft size={18} aria-hidden /> Change option
+          </Button>
+          <div className="note"><Info size={16} aria-hidden style={{ display: 'inline', verticalAlign: '-3px', marginRight: 6 }} />After confirming you’ll get a live page for landing: status updates, the waiting window and a 2-minute reminder.</div>
+        </aside>
       </section>
-
-      <Notice tone="sky" icon={Info} className="mt-4" title="This is a proposal, not a booking">
-        No taxi is booked and no payment is taken. One of you books the cab at the pickup point and you settle the split between yourselves.
-      </Notice>
-
-      {error && <Notice tone="rose" className="mt-4" title="Couldn’t confirm">{error}</Notice>}
-    </AppShell>
+    </>
   );
 }

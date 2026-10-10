@@ -1,14 +1,13 @@
 import { useMemo } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { ArrowRight, Info } from 'lucide-react';
-import { AppShell } from '../components/AppShell.jsx';
-import { Button } from '../components/ui.jsx';
-import { FareCard } from '../components/FareCard.jsx';
-import { Avatar } from '../components/PassengerCard.jsx';
+import { ArrowLeft, ArrowRight, Info } from 'lucide-react';
+import { Button, PageHeading, JourneySteps, useDocumentTitle } from '../components/ui.jsx';
+import { OptionCard } from '../components/OptionCard.jsx';
 import { useAppState } from '../state/AppState.jsx';
 import { buildRideOptions } from '../utils/fareCalculation.js';
 
 export default function RideComparison() {
+  useDocumentTitle('Compare fare options');
   const { state, update } = useAppState();
   const navigate = useNavigate();
   const { trip, selected } = state;
@@ -20,32 +19,19 @@ export default function RideComparison() {
 
   const fallback = options.find((o) => o.id === trip.preference && o.available) || options.find((o) => o.available);
   const current = options.find((o) => o.id === state.optionKind && o.available) || fallback;
+  const names = selected.map((s) => s.displayName);
 
   return (
-    <AppShell
-      step={2}
-      back="/matches"
-      title="Compare journeys"
-      footer={
-        <Button size="lg" className="w-full" disabled={!current} onClick={() => { update({ optionKind: current.id }); navigate('/confirm'); }}>
-          {current ? `Continue with ${current.label}` : 'No option fits this group'} {current && <ArrowRight className="size-5" aria-hidden />}
-        </Button>
-      }
-    >
-      <section className="mb-4 flex items-center gap-3">
-        <div className="flex -space-x-2">
-          <Avatar name={trip.displayName} tone="bg-teal text-white ring-2 ring-sand" size="size-10" />
-          {selected.map((s) => <Avatar key={s.id} name={s.displayName} tone="bg-sky-soft text-sky ring-2 ring-sand" size="size-10" />)}
-        </div>
-        <p className="text-[14px] leading-snug text-ink-2">
-          You{selected.map((s, i) => (i === selected.length - 1 ? ` & ${s.displayName}` : `, ${s.displayName}`))}
-          <span className="block text-mute">{selected.length + 1} riders from {trip.airportCode}</span>
-        </p>
-      </section>
+    <>
+      <PageHeading eyebrow="Step 03 · Fare options" title={<>Three ways to <em>share</em> the ride.</>}>
+        For you, {names.slice(0, -1).join(', ')}{names.length > 1 ? ' and ' : ''}{names[names.length - 1]} from {trip.airportCode}. Each fare is your share,
+        with the cab split by the distance each rider travels.
+      </PageHeading>
+      <JourneySteps current={2} />
 
-      <div role="radiogroup" aria-label="Journey options" className="grid gap-3">
+      <div className="problem-grid" role="radiogroup" aria-label="Journey options">
         {options.map((o) => (
-          <FareCard
+          <OptionCard
             key={o.id}
             option={o}
             riders={selected.length + 1}
@@ -56,10 +42,19 @@ export default function RideComparison() {
         ))}
       </div>
 
-      <p className="mt-4 flex gap-2 text-[12.5px] leading-snug text-mute">
-        <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-        All fares and times are estimates from fixed assumptions (₹22/km cab, metro & auto tariffs) and straight-line distances — not live quotes or traffic.
-      </p>
-    </AppShell>
+      <div className="quiet-note" style={{ marginTop: '1.8rem' }}>
+        <span className="icon-box"><Info size={22} aria-hidden /></span>
+        <p>Fares and times are estimates from fixed assumptions and straight-line distances × 1.35 — not live taxi quotes, bus timetables or traffic.</p>
+      </div>
+
+      <div className="button-row" style={{ marginTop: '1.8rem', justifyContent: 'space-between' }}>
+        <Button variant="secondary" onClick={() => navigate('/matches')}>
+          <ArrowLeft size={18} aria-hidden /> Back to matches
+        </Button>
+        <Button disabled={!current} onClick={() => { update({ optionKind: current.id }); navigate('/confirm'); }}>
+          {current ? `Continue with ${current.label}` : 'No option fits this group'} {current && <ArrowRight size={18} aria-hidden />}
+        </Button>
+      </div>
+    </>
   );
 }

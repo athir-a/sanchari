@@ -58,29 +58,24 @@ export function useDeadlineReminder(ride, now, active) {
 export function ReminderBanner({ reminder, remaining, deadline, onDismiss }) {
   const vibrated = reminder.vibration === 'vibrated';
   return (
-    <section role="alert" className="rise pulse-ring fixed inset-x-0 top-[84px] z-30 mx-auto w-[calc(100%-32px)] max-w-[448px] rounded-3xl border border-amber/30 bg-amber-soft p-4 text-ink shadow-xl">
-      <div className="flex items-start gap-3">
-        <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-amber text-white">
-          <BellRing className="size-5" aria-hidden />
+    <section role="alert" className="reminder" aria-labelledby="reminder-title">
+      <span className="icon-box accent"><BellRing size={22} aria-hidden /></span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p className="eyebrow" style={{ marginBottom: '0.3rem' }}>Reminder</p>
+        <h3 id="reminder-title">Waiting window ends in <span className="tabnum">{fmtCountdown(remaining)}</span></h3>
+        <p>Your shared ride’s waiting window ends at {fmtTime(deadline)}. Check everyone’s status before leaving.</p>
+        <span className="vib">
+          {vibrated ? <Vibrate size={15} aria-hidden /> : <VibrateOff size={15} aria-hidden />}
+          {vibrated
+            ? 'Your phone vibrated once.'
+            : reminder.vibration === 'blocked'
+              ? 'This browser blocked vibration — this banner is your reminder.'
+              : 'Vibration isn’t supported here — this banner is your reminder.'}
         </span>
-        <div className="min-w-0 flex-1">
-          <p className="font-bold">Waiting window ends in {fmtCountdown(remaining)}</p>
-          <p className="mt-0.5 text-[14px] text-ink-2">
-            Your shared ride’s waiting window ends at {fmtTime(deadline)}. Check everyone’s status before leaving.
-          </p>
-          <p className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-semibold text-amber">
-            {vibrated ? <Vibrate className="size-3.5" aria-hidden /> : <VibrateOff className="size-3.5" aria-hidden />}
-            {vibrated
-              ? 'Phone vibrated once.'
-              : reminder.vibration === 'blocked'
-                ? 'This browser blocked vibration — this banner is your reminder.'
-                : 'Vibration isn’t supported here — this banner is your reminder.'}
-          </p>
-        </div>
-        <button onClick={onDismiss} className="grid size-9 shrink-0 place-items-center rounded-full hover:bg-ink/5" aria-label="Dismiss reminder">
-          <X className="size-4" />
-        </button>
       </div>
+      <button onClick={onDismiss} className="icon-button" aria-label="Dismiss reminder">
+        <X size={18} />
+      </button>
     </section>
   );
 }

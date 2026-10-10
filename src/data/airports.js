@@ -1,119 +1,72 @@
-// Curated airports, destination zones and drop-off areas.
+// Service area: Cochin International Airport (COK) → Thrissur corridor,
+// via Aluva, Angamaly and Chalakudy, plus nearby Kochi suburbs.
 // Coordinates are approximate area centres, used only for straight-line
-// distance estimates. They are NOT road routes.
+// distance estimates (× road factor). They are NOT routed road distances.
 
 export const AIRPORTS = {
-  BLR: {
-    code: 'BLR',
-    name: 'Bengaluru (Kempegowda Intl)',
-    city: 'Bengaluru',
-    lat: 13.1986,
-    lng: 77.7066,
-    pickupPoint: 'Terminal 1 Arrivals · App-cab pickup bay',
-  },
-  DEL: {
-    code: 'DEL',
-    name: 'Delhi (Indira Gandhi Intl)',
-    city: 'Delhi',
-    lat: 28.5562,
-    lng: 77.1,
-    pickupPoint: 'Terminal 3 Arrivals · App-cab pickup bay',
-  },
-  BOM: {
-    code: 'BOM',
-    name: 'Mumbai (Chhatrapati Shivaji Maharaj Intl)',
-    city: 'Mumbai',
-    lat: 19.0896,
-    lng: 72.8656,
-    pickupPoint: 'Terminal 2 Arrivals · App-cab pickup bay',
+  COK: {
+    code: 'COK',
+    name: 'Cochin International Airport',
+    city: 'Kochi',
+    lat: 10.152,
+    lng: 76.4019,
+    pickupPoint: 'Arrivals forecourt · Taxi & app-cab pickup area',
   },
 };
 
-// Each zone has:
-//  - hub:   transit hub used by the CHEAPEST option (shared cab → public transport)
-// The BALANCED option picks one shared stop from the riders' own areas (see fareCalculation).
+// `hub` is the public-transport interchange used by the CHEAPEST option
+// (shared cab → hub → bus or metro). The BALANCED option picks one shared stop
+// from the riders' own areas (see fareCalculation).
 export const ZONES = {
-  // Bengaluru
-  'BLR-north': {
-    id: 'BLR-north', airport: 'BLR', name: 'North Bengaluru',
-    hub: { name: 'Yelahanka Bus Stand', lat: 13.1007, lng: 77.5963, mode: 'Bus' },
+  'COK-kochi': {
+    id: 'COK-kochi', airport: 'COK', name: 'Kochi suburbs', order: 0,
+    hub: { name: 'Aluva Metro Station', lat: 10.1099, lng: 76.3497, mode: 'Metro' },
   },
-  'BLR-central': {
-    id: 'BLR-central', airport: 'BLR', name: 'Central Bengaluru',
-    hub: { name: 'Hebbal Transit Hub', lat: 13.0358, lng: 77.597, mode: 'Metro' },
+  'COK-aluva': {
+    id: 'COK-aluva', airport: 'COK', name: 'Aluva', order: 1,
+    hub: { name: 'Aluva KSRTC Bus Station', lat: 10.1072, lng: 76.3528, mode: 'Bus' },
   },
-  'BLR-east': {
-    id: 'BLR-east', airport: 'BLR', name: 'East Bengaluru',
-    hub: { name: 'KR Puram Transit Hub', lat: 13.0005, lng: 77.675, mode: 'Metro' },
+  'COK-angamaly': {
+    id: 'COK-angamaly', airport: 'COK', name: 'Angamaly & Kalady', order: 2,
+    hub: { name: 'Angamaly KSRTC Bus Terminal', lat: 10.1925, lng: 76.3866, mode: 'Bus' },
   },
-  'BLR-south': {
-    id: 'BLR-south', airport: 'BLR', name: 'South Bengaluru',
-    hub: { name: 'Hebbal Transit Hub', lat: 13.0358, lng: 77.597, mode: 'Metro + Bus' },
+  'COK-chalakudy': {
+    id: 'COK-chalakudy', airport: 'COK', name: 'Chalakudy & Koratty', order: 3,
+    hub: { name: 'Angamaly KSRTC Bus Terminal', lat: 10.1925, lng: 76.3866, mode: 'Bus' },
   },
-  'BLR-west': {
-    id: 'BLR-west', airport: 'BLR', name: 'West Bengaluru',
-    hub: { name: 'Yeshwanthpur Transit Hub', lat: 13.0285, lng: 77.5409, mode: 'Metro' },
-  },
-  // Delhi
-  'DEL-south': {
-    id: 'DEL-south', airport: 'DEL', name: 'South Delhi',
-    hub: { name: 'Aerocity Transit Hub', lat: 28.5486, lng: 77.1206, mode: 'Metro' },
-  },
-  'DEL-central': {
-    id: 'DEL-central', airport: 'DEL', name: 'Central Delhi',
-    hub: { name: 'Aerocity Transit Hub', lat: 28.5486, lng: 77.1206, mode: 'Metro' },
-  },
-  'DEL-gurugram': {
-    id: 'DEL-gurugram', airport: 'DEL', name: 'Gurugram',
-    hub: { name: 'Aerocity Transit Hub', lat: 28.5486, lng: 77.1206, mode: 'Metro' },
-  },
-  // Mumbai
-  'BOM-west': {
-    id: 'BOM-west', airport: 'BOM', name: 'Western Suburbs',
-    hub: { name: 'Andheri Station', lat: 19.1197, lng: 72.8468, mode: 'Local train' },
-  },
-  'BOM-south': {
-    id: 'BOM-south', airport: 'BOM', name: 'South Mumbai',
-    hub: { name: 'Andheri Station', lat: 19.1197, lng: 72.8468, mode: 'Local train' },
-  },
-  'BOM-east': {
-    id: 'BOM-east', airport: 'BOM', name: 'Eastern Suburbs',
-    hub: { name: 'Ghatkopar Station', lat: 19.0863, lng: 72.9081, mode: 'Metro' },
+  'COK-thrissur': {
+    id: 'COK-thrissur', airport: 'COK', name: 'Thrissur', order: 4,
+    hub: { name: 'Angamaly KSRTC Bus Terminal', lat: 10.1925, lng: 76.3866, mode: 'Bus' },
   },
 };
 
 export const DESTINATIONS = [
-  // Bengaluru
-  { id: 'blr-yelahanka', airport: 'BLR', zone: 'BLR-north', name: 'Yelahanka', lat: 13.1007, lng: 77.5963 },
-  { id: 'blr-manyata', airport: 'BLR', zone: 'BLR-north', name: 'Manyata Tech Park', lat: 13.0473, lng: 77.6205 },
-  { id: 'blr-hebbal', airport: 'BLR', zone: 'BLR-north', name: 'Hebbal', lat: 13.0358, lng: 77.597 },
-  { id: 'blr-indiranagar', airport: 'BLR', zone: 'BLR-central', name: 'Indiranagar', lat: 12.9719, lng: 77.6412 },
-  { id: 'blr-mgroad', airport: 'BLR', zone: 'BLR-central', name: 'MG Road', lat: 12.9755, lng: 77.6067 },
-  { id: 'blr-shivajinagar', airport: 'BLR', zone: 'BLR-central', name: 'Shivajinagar', lat: 12.9857, lng: 77.605 },
-  { id: 'blr-whitefield', airport: 'BLR', zone: 'BLR-east', name: 'Whitefield', lat: 12.9698, lng: 77.75 },
-  { id: 'blr-marathahalli', airport: 'BLR', zone: 'BLR-east', name: 'Marathahalli', lat: 12.9569, lng: 77.7011 },
-  { id: 'blr-krpuram', airport: 'BLR', zone: 'BLR-east', name: 'KR Puram', lat: 13.0076, lng: 77.6955 },
-  { id: 'blr-koramangala', airport: 'BLR', zone: 'BLR-south', name: 'Koramangala', lat: 12.9352, lng: 77.6245 },
-  { id: 'blr-hsr', airport: 'BLR', zone: 'BLR-south', name: 'HSR Layout', lat: 12.9116, lng: 77.6474 },
-  { id: 'blr-jayanagar', airport: 'BLR', zone: 'BLR-south', name: 'Jayanagar', lat: 12.925, lng: 77.5938 },
-  { id: 'blr-ecity', airport: 'BLR', zone: 'BLR-south', name: 'Electronic City', lat: 12.8452, lng: 77.6602 },
-  { id: 'blr-malleshwaram', airport: 'BLR', zone: 'BLR-west', name: 'Malleshwaram', lat: 13.0067, lng: 77.5713 },
-  { id: 'blr-rajajinagar', airport: 'BLR', zone: 'BLR-west', name: 'Rajajinagar', lat: 12.991, lng: 77.555 },
-  // Delhi
-  { id: 'del-hauzkhas', airport: 'DEL', zone: 'DEL-south', name: 'Hauz Khas', lat: 28.5494, lng: 77.2001 },
-  { id: 'del-saket', airport: 'DEL', zone: 'DEL-south', name: 'Saket', lat: 28.5245, lng: 77.2066 },
-  { id: 'del-cp', airport: 'DEL', zone: 'DEL-central', name: 'Connaught Place', lat: 28.6315, lng: 77.2167 },
-  { id: 'del-karolbagh', airport: 'DEL', zone: 'DEL-central', name: 'Karol Bagh', lat: 28.6519, lng: 77.1909 },
-  { id: 'del-cybercity', airport: 'DEL', zone: 'DEL-gurugram', name: 'Cyber City', lat: 28.495, lng: 77.0895 },
-  { id: 'del-golfcourse', airport: 'DEL', zone: 'DEL-gurugram', name: 'Golf Course Road', lat: 28.4521, lng: 77.0967 },
-  // Mumbai
-  { id: 'bom-bandra', airport: 'BOM', zone: 'BOM-west', name: 'Bandra West', lat: 19.0596, lng: 72.8295 },
-  { id: 'bom-andheri', airport: 'BOM', zone: 'BOM-west', name: 'Andheri West', lat: 19.1364, lng: 72.8296 },
-  { id: 'bom-worli', airport: 'BOM', zone: 'BOM-south', name: 'Worli', lat: 19.0176, lng: 72.8172 },
-  { id: 'bom-lowerparel', airport: 'BOM', zone: 'BOM-south', name: 'Lower Parel', lat: 18.9953, lng: 72.8302 },
-  { id: 'bom-powai', airport: 'BOM', zone: 'BOM-east', name: 'Powai', lat: 19.1176, lng: 72.906 },
-  { id: 'bom-ghatkopar', airport: 'BOM', zone: 'BOM-east', name: 'Ghatkopar', lat: 19.0863, lng: 72.9081 },
+  // Kochi suburbs (south-west of the airport)
+  { id: 'cok-kalamassery', airport: 'COK', zone: 'COK-kochi', name: 'Kalamassery', lat: 10.051, lng: 76.315 },
+  { id: 'cok-edappally', airport: 'COK', zone: 'COK-kochi', name: 'Edappally', lat: 10.0261, lng: 76.3083 },
+  { id: 'cok-kakkanad', airport: 'COK', zone: 'COK-kochi', name: 'Kakkanad', lat: 10.0159, lng: 76.3419 },
+  // Aluva
+  { id: 'cok-aluva', airport: 'COK', zone: 'COK-aluva', name: 'Aluva town', lat: 10.1076, lng: 76.3516 },
+  { id: 'cok-paravur-jn', airport: 'COK', zone: 'COK-aluva', name: 'Desom', lat: 10.1358, lng: 76.3681 },
+  // Angamaly & Kalady (north of the airport)
+  { id: 'cok-angamaly', airport: 'COK', zone: 'COK-angamaly', name: 'Angamaly', lat: 10.196, lng: 76.386 },
+  { id: 'cok-kalady', airport: 'COK', zone: 'COK-angamaly', name: 'Kalady', lat: 10.1667, lng: 76.438 },
+  { id: 'cok-karukutty', airport: 'COK', zone: 'COK-angamaly', name: 'Karukutty', lat: 10.2268, lng: 76.377 },
+  // Chalakudy & Koratty (on the NH 544 corridor)
+  { id: 'cok-koratty', airport: 'COK', zone: 'COK-chalakudy', name: 'Koratty', lat: 10.269, lng: 76.354 },
+  { id: 'cok-chalakudy', airport: 'COK', zone: 'COK-chalakudy', name: 'Chalakudy', lat: 10.307, lng: 76.333 },
+  { id: 'cok-mala', airport: 'COK', zone: 'COK-chalakudy', name: 'Mala', lat: 10.245, lng: 76.264 },
+  // Thrissur
+  { id: 'cok-irinjalakuda', airport: 'COK', zone: 'COK-thrissur', name: 'Irinjalakuda', lat: 10.342, lng: 76.211 },
+  { id: 'cok-pudukkad', airport: 'COK', zone: 'COK-thrissur', name: 'Pudukkad', lat: 10.417, lng: 76.269 },
+  { id: 'cok-ollur', airport: 'COK', zone: 'COK-thrissur', name: 'Ollur', lat: 10.48, lng: 76.24 },
+  { id: 'cok-thrissur-round', airport: 'COK', zone: 'COK-thrissur', name: 'Thrissur Swaraj Round', lat: 10.5241, lng: 76.2141 },
+  { id: 'cok-thrissur-rly', airport: 'COK', zone: 'COK-thrissur', name: 'Thrissur Railway Station', lat: 10.5157, lng: 76.2085 },
+  { id: 'cok-poonkunnam', airport: 'COK', zone: 'COK-thrissur', name: 'Poonkunnam', lat: 10.541, lng: 76.207 },
 ];
+
+/** Corridor stops shown on the home page, airport outward. */
+export const CORRIDOR = ['Cochin Airport', 'Angamaly', 'Koratty', 'Chalakudy', 'Pudukkad', 'Ollur', 'Thrissur'];
 
 export const destinationsForAirport = (code) => DESTINATIONS.filter((d) => d.airport === code);
 export const getDestination = (id) => DESTINATIONS.find((d) => d.id === id) || null;

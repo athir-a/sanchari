@@ -8,22 +8,31 @@ const clamp01 = (n) => Math.max(0, Math.min(1, n));
 const point = (t) => ({ lat: t.destinationLat, lng: t.destinationLng });
 
 /**
- * Extra minutes the shared door-to-door route adds for whichever rider is dropped second.
- * Approximation from straight-line distances × road factor — not a routed estimate.
+ * Extra minutes the shared door-to-door route adds for whichever rider is dropped second,
+ * and who is dropped first. Approximation from straight-line distances × road factor —
+ * not a routed estimate. Small values mean one drop-off lies along the other's route.
  */
-export function estimateDetourMinutes(a, b) {
-  const airport = getAirport(a.airportCode);
-  const [first, second] = orderStops(airport, [point(a), point(b)]);
+export function estimateDetour(a, b) {
+  const airport = getAirport(a.airportCode) || getAirport(b.airportCode);
+  const pa = point(a);
+  const pb = point(b);
+  const [first, second] = orderStops(airport, [pa, pb]);
   const viaKm = roadKm(airport, first) + roadKm(first, second);
   const extraKm = Math.max(0, viaKm - roadKm(airport, second));
   const sameSpot = haversineKm(first, second) < 0.3;
   const minutes = (extraKm / FARE_ASSUMPTIONS.cab.cityKmh) * 60 + (sameSpot ? 0 : FARE_ASSUMPTIONS.cab.dwellMinutesPerStop);
-  return Math.round(minutes);
+  return { minutes: Math.round(minutes), aFirst: first === pa };
+}
+
+/** The stricter of the two riders' detour limits. */
+export function detourLimit(a, b, config = MATCHING_CONFIG) {
+  return Math.min(a.maxDetourMinutes ?? config.maxDetourMinutes, b.maxDetourMinutes ?? config.maxDetourMinutes);
 }
 
 /**
  * Evaluate whether two trips can share a ride. Hard rules run first and reject;
- * only compatible pairs are scored.
+ * only compatible pairs are scored. Destinations are compatible when they are
+ * close together OR one lies along the other's route (small detour).
  */
 export function evaluatePair(me, other, config = MATCHING_CONFIG) {
   const windowMin = config.arrivalWindowMinutes;
@@ -38,8 +47,13 @@ export function evaluatePair(me, other, config = MATCHING_CONFIG) {
   }
 
   const gapKm = haversineKm(point(me), point(other));
-  if (gapKm > config.maxDropoffGapKm) {
-    return { ok: false, code: 'destination', reason: `Heading to ${other.destinationName}, ~${Math.round(gapKm)} km from your drop-off` };
+  const { minutes: detour, aFirst: meFirst } = estimateDetour(me, other);
+  const limit = detourLimit(me, other, config);
+  if (gapKm > config.maxDropoffGapKm && detour > limit) {
+    return { ok: false, code: 'destination', reason: `${other.destinationName} is off your route (~${detour} min detour)` };
+  }
+  if (detour > limit) {
+    return { ok: false, code: 'detour', reason: `Would add ~${detour} min (limit ${limit})` };
   }
 
   const bags = (me.luggageCount || 0) + (other.luggageCount || 0);
@@ -57,24 +71,19 @@ export function evaluatePair(me, other, config = MATCHING_CONFIG) {
     };
   }
 
-  const detour = estimateDetourMinutes(me, other);
-  if (detour > config.maxDetourMinutes) {
-    return { ok: false, code: 'detour', reason: `Would add ~${detour} min of detour` };
-  }
-
   const w = config.weights;
   const parts = {
     time: clamp01(1 - timeDiff / windowMin),
-    destination: clamp01(1 - gapKm / config.maxDropoffGapKm),
+    destination: clamp01(Math.max(1 - gapKm / config.maxDropoffGapKm, 1 - detour / limit)),
     preference: prefScore,
-    detour: clamp01(1 - detour / config.maxDetourMinutes),
+    detour: clamp01(1 - detour / limit),
     luggage: vehicle.id === 'sedan' ? 1 : 0.6,
   };
   const score = Math.round(
     100 * (w.time * parts.time + w.destination * parts.destination + w.preference * parts.preference + w.detour * parts.detour + w.luggage * parts.luggage),
   );
 
-  return { ok: true, score, parts, metrics: { timeDiff, gapKm, detour, vehicle: vehicle.id, bags } };
+  return { ok: true, score, parts, metrics: { timeDiff, gapKm, detour, meFirst, vehicle: vehicle.id, bags } };
 }
 
 function explain(me, other, metrics) {
@@ -85,8 +94,10 @@ function explain(me, other, metrics) {
     reasons.push(`Same area: ${other.destinationName}`);
   } else if (me.destinationZone === other.destinationZone) {
     reasons.push(`Both heading to ${getZone(other.destinationZone)?.name ?? 'the same zone'}`);
-  } else {
+  } else if (gapKm <= MATCHING_CONFIG.maxDropoffGapKm) {
     reasons.push(`Drop-offs about ${gapKm.toFixed(1)} km apart`);
+  } else {
+    reasons.push(metrics.meFirst ? `${other.destinationName} is further along your route` : `${other.destinationName} is on your way`);
   }
   reasons.push(detour <= 3 ? 'Almost no detour' : `Adds about ${detour} min`);
   if (me.preference === other.preference) reasons.push(`Also prefers ${PREFERENCES[other.preference].label}`);

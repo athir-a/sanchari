@@ -1,8 +1,8 @@
 # Sanchari
 
-**Find people landing when you do, compare ways home, and coordinate one shared cab.**
+**Flight-aware shared rides from Cochin International Airport (COK) to Thrissur via Aluva, Angamaly and Chalakudy.**
 
-Sanchari is a mobile-first web app for travellers arriving at an airport. It matches you with passengers who land around the same time and are heading the same way. It compares a cheapest, a balanced and a direct shared journey, and it coordinates the meet-up at the pickup point after landing.
+Sanchari matches travellers who land at COK around the same time and whose drop-offs are close together **or lie along each other's route**. It compares a cheapest, a balanced and a direct shared journey. It splits the cab fare by the distance each rider shares, and it coordinates the meet-up at the pickup point after landing.
 
 > This is a hackathon prototype. It does not book taxis, take payments or verify identities. Every fare and travel time is an **estimate**.
 
@@ -57,16 +57,31 @@ CLI alternative: `npx vercel` and then `npx vercel --prod`.
 
 ## How it works
 
+### Design system (`src/styles.css`)
+The UI is plain CSS with no framework, following the Sanchari editorial design system. It uses Libre Caslon Display for display headings and DM Sans for body text. The layout patterns are the utility bar, site header, hero, journey strip, workspace with an input card and a quick panel, result card, problem grid, accordion, learning banner and footer. The utility bar has a larger-text toggle and a high-contrast mode, both remembered per browser.
+
+The palette is built around the brand cyan **#4EC6D6**:
+
+| Token | Value | Use |
+|---|---|---|
+| `--brand` | `#4ec6d6` | Logo, wax seal, result-card stripe, "selected" tags, nav counter |
+| `--primary` | `#0e6e7c` | Buttons, links, active nav. A deep teal of the same hue: white on #4EC6D6 is only ~2:1 contrast, while white on this is ~6:1 |
+| `--primary-hover` | `#0a5763` | Primary hover |
+| `--ink` / `--muted` | `#0f3a42` / `#4f6b70` | Headings / body copy |
+| `--bg` / `--paper` / `--soft` | `#f4f8f8` / `#fdfefe` / `#e1f4f6` | Page / cards / tints and icon boxes |
+| `--line` | `#d3e3e5` | 1px borders |
+| `--accent` / `--accent-soft` | `#b04a2f` / `#fbe8e1` | Coral complement: eyebrows, step numbers, warnings |
+
 ### Matching (`src/utils/matching.js`)
 `findCompatiblePassengers(currentTrip, candidateTrips)` first applies hard rules, then scores the trips that remain.
 
 Hard rules (any one rejects the pair, and the reason is shown):
 1. Same airport
 2. Arrival within **±45 min** (configurable; the user can widen it to ±90)
-3. Drop-offs within **7 km** in a straight line
+3. Drop-offs within **7 km** of each other, **or** one drop-off on the other's way (a Chalakudy rider fits a Thrissur trip)
 4. Bags fit in one vehicle (sedan 4, SUV 6)
 5. Compatible preferences: a *Direct* rider is never paired with a *Cheapest* rider
-6. Estimated detour of 30 min or less
+6. Estimated detour within the stricter of the two riders' own limits (10, 15, 25 or 40 min, chosen on the form)
 
 The weighted score uses time 35%, destination 30%, preference 15%, detour 12% and luggage 8%. All thresholds and weights are in `src/data/config.js`.
 
@@ -77,11 +92,11 @@ When you pick several people, `canJoinGroup()` checks every pair plus the capaci
 ### Fares (`src/utils/fareCalculation.js`)
 The same assumptions apply to every option: ₹120 airport pickup + ₹100 base + ₹22/km, with an SUV at ×1.35. Metro or bus is ₹20 + ₹2.5/km, capped at ₹90. Auto is ₹30 for the first 2 km, then ₹15/km.
 
-- **Cheapest:** shared cab to the zone's transit hub, then metro or bus. Not offered if anyone in the group chose Direct.
-- **Balanced:** the cab makes **one** shared stop in one rider's area, chosen to minimise the group's total cost. Everyone else takes a short auto or walks.
+- **Cheapest:** shared cab to a transit hub (Angamaly KSRTC Bus Terminal, Aluva KSRTC or Aluva Metro), then KSRTC bus or metro. Not offered if anyone in the group chose Direct.
+- **Balanced:** riders within 4 km of each other share one stop in one of their areas and finish by auto or on foot. Riders further along the corridor get their own stop, so nobody is left with a long auto ride.
 - **Direct:** the cab drops each rider at their own address. Stops are ordered nearest-first.
 
-Your share = cab fare ÷ riders + your own onward fare. Savings are measured against a solo door-to-door cab.
+**Proportionate split:** the pickup fee and base fare are shared equally. Each stretch of road is split only among the riders still in the cab, so someone getting off at Chalakudy pays less than someone going to Thrissur. Each rider's own onward fare is added to their share. Savings are measured against a solo door-to-door cab.
 
 ### Coordination
 - Proposed departure = latest arrival in the group + 30 min. The waiting deadline is 10 min after that.
@@ -93,25 +108,25 @@ Your share = cab fare ÷ riders + your own onward fare. Savings are measured aga
 
 ```
 src/
-  components/   AppShell, ui (Button/Field/Badge/Notice), PreferenceSelector,
-                PassengerCard, FareCard, RideStatus (hero, steps, members, feed),
+  components/   SiteLayout (utility bar, header, nav, footer), ui (Button, Field, Tag, Note,
+                PageHeading, JourneySteps), PassengerCard, OptionCard, RideStatus,
                 Countdown (useNow, useDeadlineReminder, ReminderBanner), LiveInviteCheck
   pages/        ArrivalSetup, MatchResults, RideComparison, RideConfirmation, RideCoordination
   services/     supabaseClient, tripService, rideService, storage
   data/         airports (airports, zones, destinations), demoPassengers, config
   state/        AppState (shared, persisted journey state)
   utils/        matching, fareCalculation, geo, trip, validation, timeFormatting, notifications
-  App.jsx, main.jsx, index.css
+  App.jsx, main.jsx, styles.css (design system)
 supabase/schema.sql
 .env.example, vercel.json
 ```
 
 ## Demo script for judges (about 3 minutes)
 
-1. **Arrival:** tap **Find my ride** on the empty form to show validation. Then tap **Fill demo trip** (Aditi, BLR → Indiranagar, 2 bags, Balanced) and **Find my ride**.
-2. **Matches:** Meera, Ananya, Rohan and Zoya appear, ranked, each with reasons and an estimated saving. Open **Not matched** to see the rejections: Kabir (95 min apart), Farah (Whitefield, 12 km away) and Vikram (7 bags together).
-3. Add **Meera**, then **Ananya**. Point out that Rohan is now blocked: *Meera wants Direct and Rohan wants Cheapest*. Tap **Compare options**.
-4. **Compare:** Cheapest is unavailable because Meera asked for a door-to-door drop. Balanced and Direct show your share, duration, detour, transfers and savings. Open **View cab route in Maps**. Continue with Balanced.
+1. **Home:** tap **Find travellers on my route** on the empty form to show validation. Then tap **Try a demo trip** (Aditi, COK → Thrissur Swaraj Round, 2 bags, Balanced, up to 25 min detour) and **Find travellers on my route**.
+2. **Matches:** Joseph, Arjun, Rohan, Ananya, Meera and Priya appear, ranked, each with reasons. For example, *"Chalakudy is on your way"* is a route-overlap match. Open **Not matched** to see the rejections: Kabir (95 min apart), Farah (Kakkanad is off your route), Vikram (7 bags together) and others.
+3. Add **Meera**, then point out that Rohan is now blocked: *Meera wants Direct and Rohan wants Cheapest*. Add **Ananya** and tap **Compare fare options**.
+4. **Compare:** Cheapest is unavailable because Meera asked for a door-to-door drop. Balanced and Direct show your share, duration, detour, transfers and savings. Open **View cab route in Google Maps**. Continue with Balanced, and point out on the confirm page that each person's share is different.
 5. **Confirm:** review the summary and the "proposal, not a booking" note. Tap **Confirm I'm in**; double taps are ignored.
 6. **After landing:** tap **I've landed · collecting luggage**, then **I'm walking to pickup**. **Reload the page** to show that status and countdown persist.
 7. Open **Testing tools** and tap **Deadline in 2:10**. After about 10 s the reminder appears and says whether the phone vibrated. Reload: it doesn't fire again.
@@ -121,12 +136,13 @@ Tip: open the app in two tabs. Status changes in one tab show up in the other.
 
 ## Implemented
 
-Arrival form with validation and persisted input · rules-based matching with explained reasons and rejections · adjustable time window · empty state (widen window / change destination / demo matches) · multi-rider groups with pairwise checks · three journey options with consistent fare maths · Maps links · double-tap-safe confirmation · persistent ride state · one-tap statuses · delays and departure shifts · updates feed · countdown from a stored timestamp · a single 2-minute reminder with an honest vibration report · testable deadlines · demo mode · Supabase live mode with RLS, RPCs and Realtime · 22 unit tests.
+Editorial design system with larger-text and high-contrast modes · arrival form with validation and persisted input · rules-based matching with explained reasons and rejections · adjustable time window · empty state (widen window / change destination / demo matches) · multi-rider groups with pairwise checks · three journey options with consistent fare maths · Maps links · double-tap-safe confirmation · persistent ride state · one-tap statuses · delays and departure shifts · updates feed · countdown from a stored timestamp · a single 2-minute reminder with an honest vibration report · testable deadlines · demo mode · Supabase live mode with RLS, RPCs and Realtime · 25 unit tests.
 
 ## Limitations and not built
 
 - No ticket upload or OCR, no live flight tracking, no live taxi or transit prices, no routing API, no payments, no identity verification, no chat.
-- Destinations come from a curated area list for BLR, DEL and BOM. The exact address is free text and isn't geocoded.
+- Only COK is served. Destinations come from a curated list of areas along the Aluva–Angamaly–Chalakudy–Thrissur corridor and nearby Kochi suburbs. The exact address is free text and isn't geocoded.
+- Route overlap is estimated from straight-line distances, not a routing API. Live flight data, Django/WebSocket backend, driver assignment and group chat are not built.
 - Reminders only work while the page is open. Browsers can't vibrate or notify from a closed or background tab, and iOS Safari has no Vibration API.
 - Live mode has passed its RLS test on local Postgres but hasn't been exercised end to end on a hosted Supabase project.
 - Demo co-passengers move forward only when you use the demo controls, so nothing about their arrival is ever assumed.

@@ -16,7 +16,7 @@ describe('findCompatiblePassengers', () => {
 
   it('returns the compatible demo passengers', () => {
     const names = matches.map((m) => m.trip.displayName).sort();
-    expect(names).toEqual(['Ananya', 'Meera', 'Rohan', 'Zoya']);
+    expect(names).toEqual(['Ananya', 'Arjun', 'Joseph', 'Meera', 'Priya', 'Rohan']);
   });
 
   it('ranks matches by score, best first', () => {
@@ -27,6 +27,16 @@ describe('findCompatiblePassengers', () => {
   it('rejects Farah on destination', () => expect(byName(rejected, 'Farah').code).toBe('destination'));
   it('rejects Vikram on luggage', () => expect(byName(rejected, 'Vikram').code).toBe('luggage'));
   it('rejects Ishaan on airport', () => expect(byName(rejected, 'Ishaan').code).toBe('airport'));
+  it('matches riders whose drop-off lies along the route', () => {
+    const r = byName(matches, 'Rohan');
+    expect(r.metrics.gapKm).toBeGreaterThan(20);
+    expect(r.reasons).toContain('Chalakudy is on your way');
+  });
+  it('honours a stricter detour limit', () => {
+    const strict = findCompatiblePassengers({ ...me, maxDetourMinutes: 10 }, candidates);
+    expect(strict.matches.length).toBeLessThanOrEqual(matches.length);
+    strict.matches.forEach((m) => expect(m.metrics.detour).toBeLessThanOrEqual(10));
+  });
 
   it('respects a configurable time window', () => {
     const wide = findCompatiblePassengers(me, candidates, { arrivalWindowMinutes: 120 });
@@ -55,7 +65,7 @@ describe('canJoinGroup', () => {
     expect(canJoinGroup(me, [t('Ananya')], t('Meera')).ok).toBe(true);
   });
   it('limits group size', () => {
-    expect(canJoinGroup(me, [t('Ananya'), t('Meera'), t('Zoya')], t('Rohan')).ok).toBe(false);
+    expect(canJoinGroup(me, [t('Ananya'), t('Meera'), t('Joseph')], t('Rohan')).ok).toBe(false);
   });
 });
 
@@ -63,25 +73,33 @@ describe('fares', () => {
   const ananya = candidates.find((c) => c.displayName === 'Ananya');
   const meera = candidates.find((c) => c.displayName === 'Meera');
 
-  it('splits the shared cab fare equally', () => {
-    const opt = buildOption('direct', me, [ananya]);
-    expect(opt.perPerson).toBe(Math.round(opt.cabFare / 2));
+  it('splits the cab proportionately: shares add up and the shorter ride pays less', () => {
+    const rohan = candidates.find((c) => c.displayName === 'Rohan');
+    const opt = buildOption('direct', me, [rohan]);
+    const [mine, his] = opt.members;
+    expect(Math.abs(mine.cost + his.cost - opt.cabFare)).toBeLessThanOrEqual(1);
+    expect(his.cost).toBeLessThan(mine.cost);
     expect(opt.transfers).toBe(0);
+  });
+
+  it('balanced never strands a rider with a long auto ride', () => {
+    const rohan = candidates.find((c) => c.displayName === 'Rohan');
+    const opt = buildOption('balanced', me, [rohan]);
+    expect(opt.stops.length).toBe(2);
   });
 
   it('adds public transport separately for the cheapest option', () => {
     const opt = buildOption('cheapest', me, [ananya]);
     const mine = opt.members[0];
-    expect(opt.modes).toContain('Metro');
-    expect(mine.cost).toBe(Math.round(opt.cabFare / 2 + (mine.cost - opt.cabFare / 2)));
-    expect(opt.perPerson).toBeGreaterThan(Math.round(opt.cabFare / 2) - 1);
+    expect(opt.modes).toContain('Bus');
+    expect(mine.cost).toBeGreaterThan(Math.round(opt.cabFare / 2));
     expect(opt.totalCost).toBeGreaterThan(opt.cabFare);
   });
 
-  it('orders cost cheapest < balanced < direct for the user', () => {
+  it('cheapest is the lowest-cost option for the user', () => {
     const [c, b, d] = buildRideOptions(me, [ananya]);
     expect(c.perPerson).toBeLessThan(b.perPerson);
-    expect(b.perPerson).toBeLessThan(d.perPerson);
+    expect(c.perPerson).toBeLessThan(d.perPerson);
     expect(d.savings).toBeGreaterThan(0);
   });
 
@@ -110,11 +128,12 @@ describe('validateArrival', () => {
     expect(validateArrival({ ...DEMO_TRIP, arrivalLocal: ARRIVAL }, now)).toEqual({});
   });
   it('flags missing fields', () => {
-    const e = validateArrival({ displayName: '', airportCode: '', arrivalLocal: '', destinationId: '', luggageCount: 1, preference: '' }, now);
+    const e = validateArrival({ displayName: '', airportCode: '', arrivalLocal: '', destinationId: '', luggageCount: 1, preference: '', maxDetourMinutes: 25 }, now);
     expect(Object.keys(e).sort()).toEqual(['airportCode', 'arrivalLocal', 'destinationId', 'displayName', 'preference']);
   });
-  it('flags a destination from another airport', () => {
-    const e = validateArrival({ ...DEMO_TRIP, airportCode: 'DEL', arrivalLocal: ARRIVAL }, now);
+  it('only accepts the served airport', () => {
+    const e = validateArrival({ ...DEMO_TRIP, airportCode: 'TRV', arrivalLocal: ARRIVAL }, now);
+    expect(e.airportCode).toBeTruthy();
     expect(e.destinationId).toBeTruthy();
   });
 });

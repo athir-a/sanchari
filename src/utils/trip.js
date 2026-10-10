@@ -17,6 +17,7 @@ export function tripFromForm(form, id = 'me') {
     dropoffAddress: form.dropoffAddress?.trim() || '',
     luggageCount: Number(form.luggageCount) || 0,
     preference: form.preference,
+    maxDetourMinutes: Number(form.maxDetourMinutes) || 25,
     status: 'searching',
   };
 }

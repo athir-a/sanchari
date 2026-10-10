@@ -18,6 +18,7 @@ function rowToTrip(r) {
     dropoffAddress: r.dropoff_address || '',
     luggageCount: r.luggage_count,
     preference: r.preference,
+    maxDetourMinutes: r.max_detour_minutes ?? 25,
     status: r.status,
   };
 }
@@ -43,6 +44,7 @@ export async function saveTrip(trip, existingId) {
     dropoff_address: trip.dropoffAddress || null,
     luggage_count: trip.luggageCount,
     preference: trip.preference,
+    max_detour_minutes: trip.maxDetourMinutes,
     status: 'searching',
   };
   const q = existingId && !existingId.startsWith('me-')
