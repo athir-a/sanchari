@@ -1,37 +1,44 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
-import { Check, X, Search, Pencil } from 'lucide-react';
-import { Button, Note, PageHeading, TextButton, useDocumentTitle } from '../components/ui.jsx';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Check, X, Search, Pencil, Wallet, Scale, CarFront, TrainFront, Bus, Bike, Footprints, Sparkles } from 'lucide-react';
+import { Button, Note, PageHeading, JourneySteps, Tag, TextButton, useDocumentTitle } from '../components/ui.jsx';
 import { Avatar } from '../components/Avatar.jsx';
+import { RouteMap } from '../components/RouteMap.jsx';
 import { useAppState } from '../state/AppState.jsx';
 import { getCandidateTrips } from '../services/tripService.js';
 import { IS_LIVE } from '../services/supabaseClient.js';
 import * as rides from '../services/rideService.js';
 import { proposeGroup } from '../utils/matching.js';
 import { formatINR, soloDirect } from '../utils/fareCalculation.js';
-import { readyAt } from '../utils/readiness.js';
 import { fmtTime } from '../utils/timeFormatting.js';
-import { PREFERENCES } from '../data/config.js';
+import { PREFERENCES, RIDE_CONFIG } from '../data/config.js';
 import { getAirport } from '../data/airports.js';
 
 const KINDS = ['cheapest', 'balanced', 'direct'];
+const KIND_ICON = { cheapest: Wallet, balanced: Scale, direct: CarFront };
+const MODE_ICON = { Metro: TrainFront, Bus, Auto: Bike, Walk: Footprints };
+const MODE_LABEL = { Bus: 'KSRTC bus' };
 
 /** A proposal Sanchari worked out on this device (nobody has accepted yet). */
 function fromLocal(trip, p) {
   const { proposed } = rides.planTimes([trip, ...p.others]);
+  const o = p.option;
   return {
     source: 'local',
-    riders: [trip, ...p.others].map((t) => ({ id: t.id, name: t.displayName, destination: t.destinationName, isMe: t.id === trip.id, readyAt: readyAt(t), confirmed: false })),
-    kind: p.option.kind,
-    myShare: p.option.perPerson,
-    soloFare: p.option.soloFare,
-    vehicle: p.option.vehicle,
-    stops: p.option.stops,
+    riders: [trip, ...p.others].map((t) => ({ id: t.id, name: t.displayName, destination: t.destinationName, isMe: t.id === trip.id, confirmed: false, reasons: p.reasons[t.id] || [] })),
+    kind: o.kind,
+    myShare: o.perPerson,
+    soloFare: o.soloFare,
+    vehicle: o.vehicle,
+    stops: o.stops,
+    dropArrangement: o.dropArrangement,
+    durationMinutes: o.durationMinutes,
+    detourMinutes: o.detourMinutes,
     leaveAround: proposed,
-    pickupPoint: p.option.pickupPoint,
+    pickupPoint: o.pickupPoint,
     compare: KINDS.map((k) => {
-      const o = p.options.find((x) => x.kind === k);
-      return { kind: k, available: !!o?.available, cost: o?.perPerson ?? null };
+      const x = p.options.find((y) => y.kind === k);
+      return { kind: k, available: !!x?.available, cost: x?.perPerson ?? null, onward: x?.modes?.[1] ?? null, vehicle: x?.vehicle, reason: x?.unavailableReason };
     }),
   };
 }
@@ -43,15 +50,21 @@ function fromStored(trip, ride) {
   return {
     source: 'stored',
     ride,
-    riders: ride.members.filter((m) => m.pickupStatus !== 'left').map((m) => ({ id: m.tripId, name: m.displayName, destination: m.destinationName, isMe: m.isMe, readyAt: null, confirmed: m.confirmed })),
+    riders: ride.members.filter((m) => m.pickupStatus !== 'left').map((m) => ({ id: m.tripId, name: m.displayName, destination: m.destinationName, isMe: m.isMe, confirmed: m.confirmed, reasons: [] })),
     kind: ride.selectedPreference,
     myShare: me?.fareShare,
     soloFare: soloDirect(trip).fare,
     vehicle: ride.option?.vehicle,
     stops: ride.option?.stops || [],
+    dropArrangement: null,
+    durationMinutes: null,
+    detourMinutes: null,
     leaveAround: ride.proposedDepartureTime,
     pickupPoint: ride.pickupPoint,
-    compare: KINDS.map((k) => ({ kind: k, available: !!compare[k]?.available, cost: compare[k]?.shares?.[trip.id] ?? null })),
+    compare: KINDS.map((k) => ({
+      kind: k, available: !!compare[k]?.available, cost: compare[k]?.shares?.[trip.id] ?? null,
+      onward: compare[k]?.onward?.[trip.id] ?? null, vehicle: compare[k]?.vehicle,
+    })),
   };
 }
 
@@ -64,6 +77,10 @@ export default function MatchProposal() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(null);
   const proposal = useRef(null);
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (hash === '#fares' && view) document.getElementById('fares')?.scrollIntoView({ block: 'start' });
+  }, [hash, view]);
   const acting = useRef(false);
 
   const load = useCallback(async () => {
@@ -153,16 +170,20 @@ export default function MatchProposal() {
 
   if (view === null) {
     return (
-      <div className="narrow">
-        <PageHeading eyebrow="Finding your ride" title={<>Looking for travellers <em>on your road</em>.</>}>
-          Nobody landing around {fmtTime(trip.arrivalTime)} is heading towards {trip.destinationName} yet.
-          {IS_LIVE ? ' Keep this page open. Your ride appears here as soon as someone matches.' : ''}
+      <div>
+        <PageHeading eyebrow="Step 02 · Matches" title={<>Travellers on <em>your</em> route.</>}>
+          People landing at {trip.airportCode} around {fmtTime(trip.arrivalTime)} whose drop-off is near yours or along the way to {trip.destinationName}. Sanchari groups you automatically.
         </PageHeading>
+        <JourneySteps current={1} />
         {error && <Note tone="danger" role="alert">{error}</Note>}
         <div className="result-card empty">
-          <span className="icon-box"><Search size={22} aria-hidden /></span>
-          <p>You’ll be matched with people who are out of the airport within 30 minutes of you and going the same way.</p>
-          <Button variant="secondary" onClick={() => navigate('/#plan')}><Pencil size={18} aria-hidden /> Change my trip</Button>
+          <span className="icon-box accent"><Search size={22} aria-hidden /></span>
+          <h2>No one fits your route yet.</h2>
+          <p>Travellers need to be out of the airport within 30 minutes of you and heading towards {trip.destinationName} or along the way.</p>
+          {IS_LIVE && <p className="small" role="status">Sanchari checks for new travellers every 10 seconds and will show your ride here.</p>}
+          <div className="button-row">
+            <Button variant="secondary" onClick={() => navigate('/#plan')}><Pencil size={18} aria-hidden /> Change destination</Button>
+          </div>
         </div>
       </div>
     );
@@ -172,75 +193,147 @@ export default function MatchProposal() {
   const names = others.map((r) => r.name);
   const nameList = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
   const savings = view.soloFare != null && view.myShare != null ? Math.max(0, view.soloFare - view.myShare) : 0;
-  const alternatives = view.compare.filter((c) => c.kind !== view.kind);
+  const airport = getAirport(trip.airportCode);
+  const myStop = view.stops.find((s) => s.riders.includes(trip.displayName)) || null;
+  const myDestination = trip.destinationLat != null ? { lat: trip.destinationLat, lng: trip.destinationLng } : null;
+  const KindIcon = KIND_ICON[view.kind] || CarFront;
 
   return (
-    <div className="narrow">
-      <PageHeading eyebrow="Your shared ride" title={<>Ride with <em>{nameList}</em>.</>}>
-        {others.length === 1 ? 'They land' : 'They all land'} around your time and are going your way.
+    <>
+      <PageHeading eyebrow="Step 02 · Your matched ride" title={<>Ride with <em>{nameList}</em>.</>}>
+        {others.length === 1 ? 'They land' : 'They all land'} around your time and {others.length === 1 ? 'is' : 'are'} going your way. Sanchari put this ride together for you. Have a look and say if you’re in.
       </PageHeading>
+      <JourneySteps current={1} />
 
-      <section className="result-card proposal" aria-labelledby="share-title">
-        <ul className="rider-row">
-          {view.riders.map((r) => (
-            <li key={r.id}>
-              <Avatar name={r.name} me={r.isMe} />
-              <span>
-                <strong>{r.isMe ? 'You' : r.name}</strong>
-                <span className="muted small d-block">to {r.destination}{!r.isMe && r.confirmed ? ' · in' : ''}</span>
-              </span>
-            </li>
-          ))}
-        </ul>
+      <section className="workspace">
+        <div className="stack">
+          <div className="result-card proposal" style={{ maxWidth: 'none' }}>
+            <div className="tags">
+              <Tag tone="brand"><KindIcon size={13} aria-hidden style={{ display: 'inline', verticalAlign: '-2px', marginRight: 4 }} />{PREFERENCES[view.kind]?.label ?? 'Shared'} ride</Tag>
+              <Tag tone="plain">{view.riders.length} riders{view.vehicle ? ` · ${view.vehicle}` : ''}</Tag>
+              {view.kind === trip.preference && <Tag tone="accent">Your preference</Tag>}
+            </div>
+            <dl className="summary-list">
+              <div>
+                <dt>Riders</dt>
+                <dd>
+                  <ul className="rider-row">
+                    {view.riders.map((r) => (
+                      <li key={r.id}>
+                        <Avatar name={r.name} me={r.isMe} small />
+                        <span>
+                          <strong>{r.isMe ? 'You' : r.name}</strong>
+                          <span className="muted small d-block">to {r.destination}{!r.isMe && r.confirmed ? ' · said yes' : ''}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </dd>
+              </div>
+              <div>
+                <dt>Meet at</dt>
+                <dd>{view.pickupPoint}<p>{airport?.name}</p></dd>
+              </div>
+              <div>
+                <dt>Leave around</dt>
+                <dd className="tabnum">{fmtTime(view.leaveAround)}<p>Your {RIDE_CONFIG.pickupWindowMinutes}-minute pickup window starts when the first of you lands.</p></dd>
+              </div>
+              <div>
+                <dt>Drop-off order</dt>
+                <dd>
+                  <ol className="stop-list">
+                    {view.stops.map((s, i) => (
+                      <li key={s.name + i}>
+                        <span className="step-num">{i + 1}</span>
+                        <span>{s.name} <span className="muted">· {s.riders.map((n) => (n === trip.displayName ? 'you' : n)).join(', ')}</span></span>
+                      </li>
+                    ))}
+                  </ol>
+                  {view.dropArrangement && <p style={{ marginTop: '0.5rem' }}>{view.dropArrangement}</p>}
+                </dd>
+              </div>
+              <div>
+                <dt>Your share</dt>
+                <dd>
+                  <span className="price tabnum">{formatINR(view.myShare)}</span>
+                  <p style={{ marginTop: '0.4rem' }}>
+                    {savings > 0 ? `${formatINR(savings)} less than a cab on your own (${formatINR(view.soloFare)})` : 'About the same as a cab on your own'}
+                  </p>
+                </dd>
+              </div>
+            </dl>
 
-        <div className="share-line">
-          <div>
-            <p className="eyebrow" style={{ marginBottom: '0.4rem' }}>{PREFERENCES[view.kind]?.label ?? 'Shared'} · your share</p>
-            <p id="share-title" className="price tabnum">{formatINR(view.myShare)}</p>
-            {savings > 0 && <p className="price-note">{formatINR(savings)} less than a cab on your own</p>}
+            {error && <Note tone="danger" role="alert">{error}</Note>}
+
+            <div className="decision">
+              <Button loading={busy === 'accept'} disabled={!!busy} onClick={accept}><Check size={18} aria-hidden /> I’m in</Button>
+              <Button variant="secondary" loading={busy === 'decline'} disabled={!!busy} onClick={decline}><X size={18} aria-hidden /> Not for me</Button>
+            </div>
+            <p className="small muted">No cab is booked and nothing is paid here. You book together at the pickup point and split it as shown.</p>
           </div>
+
+          <section id="fares" aria-labelledby="compare-heading" style={{ scrollMarginTop: '1.5rem' }}>
+            <h3 id="compare-heading" style={{ marginBottom: '0.8rem' }}>Compare fares</h3>
+            <div className="compare-grid">
+              {view.compare.map((c) => {
+                const Icon = KIND_ICON[c.kind];
+                const Onward = c.onward ? MODE_ICON[c.onward] : null;
+                const chosen = c.kind === view.kind;
+                return (
+                  <article key={c.kind} className={`card compare-card${chosen ? ' is-selected' : ''}${c.available ? '' : ' is-unavailable'}`}>
+                    <div className="compare-head">
+                      <span className={`icon-box${c.available ? '' : ' accent'}`}><Icon size={20} aria-hidden /></span>
+                      <div>
+                        <h3>{PREFERENCES[c.kind].label}</h3>
+                        {chosen && <Tag tone="brand">This ride</Tag>}
+                      </div>
+                    </div>
+                    <p className="price tabnum" style={{ fontSize: '1.9rem' }}>{c.available && c.cost != null ? formatINR(c.cost) : '—'}</p>
+                    <p className="modes small">
+                      <CarFront size={15} aria-hidden /> Shared cab
+                      {Onward && <><span className="arrow" aria-hidden>→</span><Onward size={15} aria-hidden /> {MODE_LABEL[c.onward] || c.onward}</>}
+                    </p>
+                    <p className="small muted">{c.available ? PREFERENCES[c.kind].short : (c.reason || 'Not possible for this group.')}</p>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
         </div>
 
-        <dl className="ride-facts">
-          <div><dt>Meet at</dt><dd>{view.pickupPoint}</dd></div>
-          <div><dt>Leave around</dt><dd className="tabnum">{fmtTime(view.leaveAround)}</dd></div>
+        <aside className="quick-panel" aria-label="Your trip and route">
           <div>
-            <dt>Route</dt>
-            <dd>
-              <ol className="mini-route">
-                <li>{getAirport(trip.airportCode)?.code ?? 'COK'}</li>
-                {view.stops.map((s, i) => (
-                  <li key={s.name + i}>{s.name} <span className="muted">· {s.riders.map((n) => (n === trip.displayName ? 'you' : n)).join(', ')}</span></li>
-                ))}
-              </ol>
-            </dd>
+            <p className="eyebrow">Your trip</p>
+            <h3>{trip.airportCode} → {trip.destinationName}</h3>
+            <p className="small">
+              {trip.flight?.designator ? `${trip.flight.designator} · ` : ''}lands {fmtTime(trip.arrivalTime)} IST
+            </p>
+            <p className="small">{trip.luggageCount} {trip.luggageCount === 1 ? 'bag' : 'bags'} · {PREFERENCES[trip.preference].label}{trip.maxBudget ? ` · up to ${formatINR(trip.maxBudget)}` : ''}</p>
+            <TextButton onClick={() => navigate('/#plan')}>Edit trip details</TextButton>
           </div>
-        </dl>
-
-        <details className="disclosure compare">
-          <summary>Compare fares<span className="plus" aria-hidden>+</span></summary>
-          <div className="disclosure-body">
-            <ul className="compare-list">
-              {alternatives.map((c) => (
-                <li key={c.kind}>
-                  <span>{PREFERENCES[c.kind].label}</span>
-                  <span className="tabnum">{c.available && c.cost != null ? formatINR(c.cost) : 'Not possible for this group'}</span>
-                </li>
-              ))}
-            </ul>
+          <div className="divider" />
+          <div>
+            <p className="eyebrow">The route</p>
+            <h3 style={{ marginBottom: '0.9rem' }}>{airport?.code ?? 'COK'} → {view.stops.map((s) => s.name).join(' → ')}</h3>
+            <RouteMap airport={airport} stops={view.stops} myStop={myStop} myDestination={myDestination} />
           </div>
-        </details>
-
-        {error && <Note tone="danger" role="alert">{error}</Note>}
-
-        <div className="decision">
-          <Button loading={busy === 'accept'} disabled={!!busy} onClick={accept}><Check size={18} aria-hidden /> I’m in</Button>
-          <Button variant="secondary" loading={busy === 'decline'} disabled={!!busy} onClick={decline}><X size={18} aria-hidden /> Not for me</Button>
-        </div>
-        <p className="small muted">No cab is booked and nothing is paid here. You book together at the pickup point.</p>
+          {others.some((r) => r.reasons.length) && (
+            <>
+              <div className="divider" />
+              <div>
+                <h3 style={{ marginBottom: '0.6rem' }}><Sparkles size={16} aria-hidden style={{ display: 'inline', verticalAlign: '-3px', marginRight: 6 }} />Why this group</h3>
+                <ul className="check-list compact">
+                  {others.map((r) => r.reasons.length > 0 && (
+                    <li key={r.id}><strong>{r.name}</strong>: {r.reasons.slice(0, 3).join(' · ')}</li>
+                  ))}
+                </ul>
+              </div>
+            </>
+          )}
+          <div className="divider" />
+          <div className="note">Fares and times are estimates from fixed assumptions and straight-line distances × 1.35, not live taxi quotes.</div>
+        </aside>
       </section>
-
-      <TextButton onClick={() => navigate('/#plan')}><Pencil size={15} aria-hidden /> Change my trip</TextButton>
-    </div>
+    </>
   );
 }

@@ -470,7 +470,7 @@ details.disclosure[open] .plus { transform: rotate(45deg); }
   .page-heading { padding: 2.2rem 0 1.4rem; }
   .page-heading h1 { font-size: 2.4rem; }
   .header-inner { flex-direction: column; align-items: stretch; gap: 0.6rem; padding: 0.9rem 0; }
-  .site-nav ul { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.3rem; }
+  .site-nav ul { display: grid; grid-template-columns: 1fr 1fr; gap: 0.3rem; }
   .nav-link { justify-content: center; }
   .input-card, .result-card { padding: 1.4rem; }
   .card { padding: 1.3rem; }
@@ -530,19 +530,35 @@ details.compare summary { font-size: 0.94rem; }
 .compare-list li span:last-child { color: var(--muted); }
 .decision { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
 
+/* ---------- Fare comparison ---------- */
+.compare-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.9rem; }
+.compare-card { display: grid; gap: 0.7rem; align-content: start; padding: 1.3rem; }
+.compare-head { display: flex; align-items: center; gap: 0.8rem; }
+.compare-head .tag { margin-top: 0.2rem; }
+.proposal .summary-list { margin-top: 0.4rem; }
+
+/* ---------- Google Maps route ---------- */
+.route-map { display: grid; gap: 0.8rem; }
+.route-tabs .button { min-height: 40px; padding: 0.5rem 0.8rem; font-size: 0.82rem; gap: 0.4rem; }
+.map-frame { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--soft); aspect-ratio: 4 / 3; }
+.map-frame iframe { display: block; width: 100%; height: 100%; border: 0; }
+.route-links { display: grid; justify-items: start; }
+.route-links .text-button { min-height: 36px; }
+
 /* ---------- Meet page ---------- */
-.meet { padding-top: 2.6rem; display: grid; gap: 1.3rem; }
-.meet .eyebrow { margin: 0; }
-.meet-title { font-size: clamp(2.4rem, 6vw, 3.4rem); }
-.countdown { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 1.1rem; }
-.countdown-value { font-family: var(--serif); font-size: clamp(3.6rem, 13vw, 5.4rem); line-height: 1; letter-spacing: -0.02em; color: var(--ink); }
-.countdown.idle .countdown-value { color: var(--result-line); }
-.countdown.warn .countdown-value, .countdown.over .countdown-value { color: var(--accent); }
-.countdown-label { font-size: 0.95rem; color: var(--muted); max-width: 26ch; line-height: 1.45; }
-.meet-sub { display: flex; flex-wrap: wrap; gap: 0.3rem 1.4rem; margin: 0; font-size: 0.88rem; color: var(--muted); }
-.meet-sub a { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--primary); font-weight: 600; text-decoration: none; }
-.airport-map { margin: 0; padding: 0.8rem; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; }
-.airport-map svg { display: block; width: 100%; height: auto; max-height: 260px; margin-inline: auto; }
+.meet-layout { grid-template-columns: 1.35fr 1fr; }
+.window-card .countdown-value { font-size: 3.4rem; }
+.window-card.idle .countdown-value { color: var(--result-line); }
+.window-card.warn, .window-card.over { border-left-color: var(--accent); }
+.window-card.warn .countdown-value, .window-card.over .countdown-value { color: var(--accent); }
+.meet-action { display: grid; gap: 1rem; }
+.meet-action .eyebrow { margin: 0; }
+.button.big-button { min-height: 68px; font-size: 1.1rem; }
+.doing { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; }
+.button.doing-option { justify-content: flex-start; text-align: left; min-height: 60px; font-size: 0.95rem; }
+.meet-more { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem 1.6rem; border-top: 1px solid var(--line); padding-top: 0.6rem; }
+.airport-map { margin: 0; padding: 0.6rem; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; }
+.airport-map svg { display: block; width: 100%; height: auto; }
 .map-label { font: 600 9px var(--sans); fill: var(--muted); letter-spacing: 0.03em; }
 .map-dot circle { fill: var(--paper); stroke: var(--primary); stroke-width: 2; }
 .map-dot text { font: 700 10px var(--sans); fill: var(--primary); }
@@ -550,24 +566,25 @@ details.compare summary { font-size: 0.94rem; }
 .map-dot.me text { fill: var(--on-primary); }
 .map-dot.late circle { stroke: var(--accent); }
 .map-dot.late text { fill: var(--accent); }
-.who-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+.who-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; }
 .who-list li { display: flex; align-items: center; gap: 0.8rem; }
-.who-list .avatar.sm { width: 34px; height: 34px; font-size: 0.95rem; border-radius: 9px; }
-.who-name { flex: 1; min-width: 0; font-weight: 600; color: var(--ink); }
-.who-status { font-size: 0.86rem; color: var(--muted); text-align: right; }
+.who-name { flex: 1; min-width: 0; font-weight: 600; color: var(--ink); font-size: 0.94rem; }
+.who-dest { display: block; font-weight: 400; font-size: 0.78rem; color: var(--muted); }
+.who-status { font-size: 0.82rem; color: var(--muted); text-align: right; }
 .who-status.here { color: var(--primary); font-weight: 600; }
 .who-status.late { color: var(--accent); font-weight: 600; }
-.meet-action { display: grid; gap: 0.9rem; padding-top: 0.4rem; }
-.meet-action h2 { font-size: 1.5rem; }
-.button.big-button { min-height: 64px; font-size: 1.05rem; }
-.doing { display: grid; gap: 0.6rem; }
-.doing .button { justify-content: flex-start; }
-.meet-more { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem 1.6rem; }
 
+@media (max-width: 1050px) {
+  .compare-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 860px) {
+  .meet-layout { grid-template-columns: 1fr; }
+}
 @media (max-width: 700px) {
   .decision { grid-template-columns: 1fr; }
   .ride-facts > div { grid-template-columns: 1fr; gap: 0.2rem; }
-  .meet { padding-top: 1.6rem; }
+  .doing { grid-template-columns: 1fr; }
+  .window-card .countdown-value { font-size: 3rem; }
 }
 
 /* ---------- Motion preferences ---------- */

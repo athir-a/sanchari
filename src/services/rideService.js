@@ -4,27 +4,33 @@ import { RIDE_CONFIG } from '../data/config.js';
 import { readyAt, effectiveArrival } from '../utils/readiness.js';
 
 // Passenger-reported readiness. Flight data never changes these on its own.
-export const STATUS_ORDER = ['not_landed', 'landed', 'collecting_luggage', 'walking', 'at_pickup'];
+export const STATUS_ORDER = ['not_landed', 'landed', 'immigration', 'collecting_luggage', 'got_bags', 'walking', 'at_pickup'];
 export const STATUS_LABEL = {
-  not_landed: 'Awaiting arrival',
-  landed: 'Flight landed',
-  collecting_luggage: 'Collecting baggage',
+  not_landed: 'In the air',
+  landed: 'Getting off the plane',
+  immigration: 'At immigration',
+  collecting_luggage: 'Waiting for bags',
+  got_bags: 'Got bags',
+  quick_stop: 'Quick stop',
   walking: 'Walking to pickup',
-  at_pickup: 'Ready for pickup',
-  delayed: 'Needs more time',
+  at_pickup: 'At pickup',
+  delayed: 'Flight delayed',
   departed: 'Departed',
-  left: 'Unable to continue',
+  left: 'Can’t make it',
 };
 
 export function statusMessage(name, status, delayMinutes) {
   switch (status) {
     case 'landed': return `${name} has landed`;
-    case 'collecting_luggage': return `${name} is collecting baggage`;
+    case 'immigration': return `${name} is at immigration`;
+    case 'collecting_luggage': return `${name} is waiting for bags`;
+    case 'got_bags': return `${name} has their bags`;
+    case 'quick_stop': return `${name} is making a quick stop`;
     case 'walking': return `${name} is walking to the pickup point`;
-    case 'at_pickup': return `${name} is ready at the pickup point`;
-    case 'delayed': return `${name} needs about ${delayMinutes} more min`;
+    case 'at_pickup': return `${name} is at the pickup point`;
+    case 'delayed': return `${name}'s flight is delayed about ${delayMinutes} min`;
     case 'not_landed': return `${name} hasn't landed yet`;
-    case 'left': return `${name} can't continue and left the ride`;
+    case 'left': return `${name} can't make it`;
     default: return `${name}: ${STATUS_LABEL[status] || status}`;
   }
 }
@@ -63,7 +69,10 @@ export function compareSnapshot(options) {
   return Object.fromEntries(options.map((o) => [o.kind, {
     label: o.label,
     available: o.available,
+    vehicle: o.vehicle,
     shares: Object.fromEntries(o.members.map((m) => [m.tripId, m.cost])),
+    onward: Object.fromEntries(o.members.map((m) => [m.tripId, m.onward || null])),
+    dropAt: Object.fromEntries(o.members.map((m) => [m.tripId, m.dropAt])),
   }]));
 }
 
@@ -246,7 +255,7 @@ export async function findRideForTrip(tripId) {
   return row ? { id: row.ride_group_id, confirmed: row.confirmed, status: row.ride_groups?.status } : null;
 }
 
-const ON_GROUND = ['landed', 'collecting_luggage', 'walking', 'at_pickup'];
+const ON_GROUND = ['landed', 'immigration', 'collecting_luggage', 'got_bags', 'quick_stop', 'walking', 'at_pickup'];
 
 export async function updateMyStatus(ride, status, delayMinutes = 0) {
   const me = ride.members.find((m) => m.isMe);
@@ -371,7 +380,7 @@ export async function leaveRide(ride) {
 /** Local mode testing helper: move the least-progressed co-rider one step forward. */
 export async function simulateProgress(ride) {
   return mutateDemo(ride.id, (r) => {
-    const rank = (s) => (s === 'delayed' ? 2 : STATUS_ORDER.indexOf(s));
+    const rank = (s) => (s === 'delayed' ? 0 : STATUS_ORDER.indexOf(s));
     const others = r.members.filter((m) => !m.isMe && rank(m.pickupStatus) >= 0 && rank(m.pickupStatus) < STATUS_ORDER.length - 1);
     if (!others.length) return;
     others.sort((a, b) => rank(a.pickupStatus) - rank(b.pickupStatus));

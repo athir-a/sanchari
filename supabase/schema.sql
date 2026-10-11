@@ -91,7 +91,7 @@ create table if not exists public.ride_members (
   destination_name     text not null,
   arrival_time         timestamptz not null,
   pickup_status        text not null default 'not_landed'
-                       check (pickup_status in ('not_landed', 'landed', 'collecting_luggage', 'walking', 'at_pickup', 'delayed', 'departed', 'left')),
+                       check (pickup_status in ('not_landed', 'landed', 'immigration', 'collecting_luggage', 'got_bags', 'quick_stop', 'walking', 'at_pickup', 'delayed', 'departed', 'left')),
   delay_minutes        integer not null default 0 check (delay_minutes between 0 and 180),
   estimated_fare_share numeric(10, 2) not null default 0 check (estimated_fare_share >= 0),
   confirmed            boolean not null default false,
@@ -104,6 +104,10 @@ create table if not exists public.ride_members (
   unique (ride_group_id, trip_id)
 );
 create index if not exists ride_members_trip_idx on public.ride_members (trip_id);
+-- Upgrade: more "what are you doing now" statuses.
+alter table public.ride_members drop constraint if exists ride_members_pickup_status_check;
+alter table public.ride_members add constraint ride_members_pickup_status_check
+  check (pickup_status in ('not_landed', 'landed', 'immigration', 'collecting_luggage', 'got_bags', 'quick_stop', 'walking', 'at_pickup', 'delayed', 'departed', 'left'));
 
 create table if not exists public.ride_updates (
   id            uuid primary key default gen_random_uuid(),

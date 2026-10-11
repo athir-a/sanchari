@@ -33,10 +33,13 @@ export function SiteLayout({ children }) {
     window.scrollTo(0, 0);
   }, [pathname]);
 
+  const { hash } = useLocation();
   const links = [
-    { to: '/', label: 'Plan', enabled: true, match: ['/'] },
-    { to: '/arrivals', label: 'Arrivals', enabled: true, match: ['/arrivals'] },
-    { to: state.activeRideId ? '/ride' : '/match', label: 'Your ride', enabled: !!(state.activeRideId || state.trip), match: ['/match', '/ride'] },
+    { to: '/', label: 'Plan trip', enabled: true, active: pathname === '/' },
+    { to: '/arrivals', label: 'Arrivals', enabled: true, active: pathname === '/arrivals' },
+    { to: '/match', label: 'Matches', enabled: !!state.trip, active: pathname === '/match' && hash !== '#fares' },
+    { to: '/match#fares', label: 'Fare options', enabled: !!state.trip, active: pathname === '/match' && hash === '#fares' },
+    { to: '/ride', label: 'Your ride', enabled: !!state.activeRideId, active: pathname === '/ride' },
   ];
 
   return (
@@ -65,9 +68,9 @@ export function SiteLayout({ children }) {
           <nav className="site-nav" aria-label="Main navigation">
             <ul>
               {links.map((l) => {
-                const active = l.match.includes(pathname);
+                const active = l.active;
                 return (
-                  <li key={l.to}>
+                  <li key={l.label}>
                     {l.enabled ? (
                       <Link to={l.to} className="nav-link" aria-current={active ? 'page' : undefined}>
                         {l.label}

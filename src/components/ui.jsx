@@ -69,3 +69,22 @@ export function useDocumentTitle(title) {
     document.title = `${title} | Sanchari`;
   }, [title]);
 }
+
+const STEPS = ['Plan your arrival', 'Your matched ride', 'Meet your co-passengers'];
+
+/** Journey strip showing where the user is. */
+export function JourneySteps({ current }) {
+  return (
+    <ol className="journey-strip steps-progress" aria-label="Journey progress">
+      {STEPS.map((s, i) => {
+        const state = i < current ? 'is-done' : i === current ? 'is-current' : 'is-upcoming';
+        return (
+          <li key={s} className={state} aria-current={i === current ? 'step' : undefined}>
+            <b>{String(i + 1).padStart(2, '0')}</b> {s}
+            {i < current && <span className="sr-only"> (done)</span>}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
