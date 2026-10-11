@@ -1,5 +1,4 @@
 import { getDestination, getAirport } from '../data/airports.js';
-import { MATCHING_CONFIG } from '../data/config.js';
 
 const FLIGHT_RE = /^[A-Z0-9]{2}\s?\d{1,4}[A-Z]?$/i;
 
@@ -26,8 +25,8 @@ export function validateArrival(form, now = Date.now()) {
   }
 
   const d = getDestination(form.destinationId);
-  if (!d) e.destinationId = 'Choose the area you’re heading to.';
-  else if (form.airportCode && d.airport !== form.airportCode) e.destinationId = 'Pick an area served from this airport.';
+  if (!d) e.destinationId = form.district ? 'Choose where you’d like to be dropped.' : 'Choose the district you’re heading to.';
+  else if (form.airportCode && d.airport !== form.airportCode) e.destinationId = 'Pick a place served from this airport.';
 
   if (form.dropoffAddress && form.dropoffAddress.length > 120) e.dropoffAddress = 'Keep the address under 120 characters.';
 
@@ -38,7 +37,6 @@ export function validateArrival(form, now = Date.now()) {
     const b = Number(form.maxBudget);
     if (!Number.isInteger(b) || b < 50 || b > 20000) e.maxBudget = 'Enter a whole amount between ₹50 and ₹20,000, or leave it blank.';
   }
-  if (!MATCHING_CONFIG.detourChoices.includes(Number(form.maxDetourMinutes))) e.maxDetourMinutes = 'Choose how much extra time you’ll accept.';
   if (!['cheapest', 'balanced', 'direct'].includes(form.preference)) e.preference = 'Choose how you’d like to travel.';
   return e;
 }

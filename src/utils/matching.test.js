@@ -207,3 +207,63 @@ describe('flight-aware readiness', () => {
     expect(flightFromForm({ flightNumber: '' })).toBeNull();
   });
 });
+
+import { proposeGroup, groupPreference } from './matching.js';
+import { DISTRICTS, DESTINATIONS, getDestination, districtStops, hubFor } from '../data/airports.js';
+import { soloDirect as solo } from './fareCalculation.js';
+
+describe('Kerala-wide destinations', () => {
+  it('covers all 14 districts, each with a road from the airport', () => {
+    expect(DISTRICTS).toHaveLength(14);
+    DISTRICTS.forEach((d) => {
+      const { route, more } = districtStops(d.id);
+      expect(route.length).toBeGreaterThan(0);
+      [...route, ...more].forEach((p) => expect(p, `${d.id} stop`).toBeTruthy());
+      // The road ends in the district itself.
+      expect(route[route.length - 1].district).toBe(d.id);
+    });
+  });
+  it('shows stops on the way to Thrissur before Thrissur itself', () => {
+    const names = districtStops('thrissur').route.map((p) => p.name);
+    expect(names.slice(0, 4)).toEqual(['Angamaly', 'Karukutty', 'Koratty', 'Chalakudy']);
+    expect(names.at(-1)).toBe('Thrissur Swaraj Round');
+  });
+  it('gives every place a transit hub and unique id', () => {
+    expect(new Set(DESTINATIONS.map((d) => d.id)).size).toBe(DESTINATIONS.length);
+    DESTINATIONS.forEach((d) => expect(hubFor(d.id, d.zone).name).toBeTruthy());
+  });
+  it('accepts a far district trip', () => {
+    const trip = tripFromForm({ ...DEMO_TRIP, district: 'kasaragod', destinationId: 'cok-kasaragod', arrivalLocal: ARRIVAL });
+    expect(getDestination(trip.destinationId).district).toBe('kasaragod');
+    expect(validateArrival({ ...DEMO_TRIP, destinationId: 'cok-kasaragod', arrivalLocal: ARRIVAL }, new Date('2026-10-11T10:00').getTime())).toEqual({});
+  });
+});
+
+describe('automatic grouping', () => {
+  it('builds a ride on its own, with at most 3 co-riders who all fit together', () => {
+    const p = proposeGroup(me, candidates);
+    expect(p.others.length).toBeGreaterThan(0);
+    expect(p.others.length).toBeLessThanOrEqual(3);
+    p.others.forEach((o, i) => expect(canJoinGroup(me, p.others.filter((_, j) => j !== i), o).ok).toBe(true));
+    expect(p.option.available).toBe(true);
+  });
+  it('uses the shared preference, or Balanced when riders differ', () => {
+    expect(groupPreference([{ preference: 'direct' }, { preference: 'direct' }])).toBe('direct');
+    expect(groupPreference([{ preference: 'direct' }, { preference: 'balanced' }])).toBe('balanced');
+  });
+  it('leaves out travellers you declined', () => {
+    const first = proposeGroup(me, candidates);
+    const next = proposeGroup(me, candidates, { exclude: first.others.map((o) => o.id) });
+    next?.others.forEach((o) => expect(first.others.map((x) => x.id)).not.toContain(o.id));
+  });
+  it('never proposes a ride that costs someone more than going alone', () => {
+    const far = tripFromForm({ ...DEMO_TRIP, preference: 'direct', destinationId: 'cok-kasaragod', arrivalLocal: ARRIVAL });
+    const p = proposeGroup(far, buildDemoCandidates(far.arrivalTime, far));
+    expect(p).toBeTruthy();
+    const trips = [far, ...p.others];
+    p.option.members.forEach((m) => expect(m.cost).toBeLessThan(solo(trips.find((t) => t.id === m.tripId)).fare));
+  });
+  it('returns null when nobody is going your way', () => {
+    expect(proposeGroup(me, [])).toBeNull();
+  });
+});

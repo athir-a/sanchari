@@ -71,10 +71,16 @@ create table if not exists public.ride_groups (
   route_details           jsonb,
   selected_preference     text not null check (selected_preference in ('cheapest', 'balanced', 'direct')),
   estimated_total_fare    numeric(10, 2) not null check (estimated_total_fare >= 0),
-  status                  text not null default 'confirmed' check (status in ('proposed', 'confirmed', 'departed', 'cancelled')),
+  status                  text not null default 'proposed' check (status in ('proposed', 'confirmed', 'departed', 'cancelled')),
+  -- Set when the first rider says they've landed; the 30-minute pickup window runs from here.
+  pickup_window_started_at timestamptz,
   created_by              uuid not null default auth.uid() references auth.users (id) on delete cascade,
   created_at              timestamptz not null default now()
 );
+
+-- Upgrades for databases created from an earlier version of this file.
+alter table public.ride_groups add column if not exists pickup_window_started_at timestamptz;
+alter table public.ride_groups alter column status set default 'proposed';
 
 create table if not exists public.ride_members (
   id                   uuid primary key default gen_random_uuid(),
@@ -157,12 +163,22 @@ language sql stable security definer set search_path = public as $$
     and coalesce(case when t.flight_verification = 'verified' then coalesce(t.flight_actual_arrival, t.flight_estimated_arrival, t.flight_scheduled_arrival) end, t.arrival_time)
         between p_from and p_to
     and p_to - p_from <= interval '6 hours'
+    -- Once a proposal between two travellers is declined, don't propose them together again.
+    and not exists (
+      select 1 from ride_members m1
+      join ride_members m2 on m2.ride_group_id = m1.ride_group_id
+      join ride_groups g on g.id = m1.ride_group_id
+      join trips mine on mine.id = m2.trip_id
+      where m1.trip_id = t.id and g.status = 'cancelled' and mine.user_id = auth.uid()
+    )
   order by t.arrival_time
   limit 50;
 $$;
 
--- Create a ride group atomically. The caller must own p_my_trip_id; other trips
--- must be searching at the same airport. Only the caller is auto-confirmed.
+-- Sanchari groups riders automatically. The first rider to accept a proposed group creates
+-- it here (status 'proposed', only them confirmed); it becomes 'confirmed' once everyone
+-- has accepted (see ride_members_sync). Rows are locked so two riders accepting at the
+-- same moment can't put the same traveller in two groups.
 create or replace function public.create_ride_group(
   p_my_trip_id uuid, p_other_trip_ids uuid[], p_pickup_point text,
   p_proposed_departure timestamptz, p_waiting_deadline timestamptz,
@@ -175,21 +191,23 @@ declare
   v_group uuid;
   v_count int;
 begin
-  select * into v_me from trips where id = p_my_trip_id and user_id = auth.uid();
+  select * into v_me from trips where id = p_my_trip_id and user_id = auth.uid() for update;
   if not found then raise exception 'You can only create a ride for your own trip'; end if;
+  if v_me.status <> 'searching' then raise exception 'Your trip is already in a ride'; end if;
   if coalesce(array_length(p_other_trip_ids, 1), 0) not between 1 and 3 then
     raise exception 'A ride needs 1 to 3 co-passengers';
   end if;
+  perform 1 from trips where id = any(p_other_trip_ids) order by id for update;
   select count(*) into v_count from trips
    where id = any(p_other_trip_ids) and status = 'searching' and airport_code = v_me.airport_code and user_id <> auth.uid();
   if v_count <> array_length(p_other_trip_ids, 1) then
-    raise exception 'One of the selected travellers is no longer available';
+    raise exception 'One of the travellers is no longer available';
   end if;
 
   insert into ride_groups (airport_code, pickup_point, proposed_departure_time, waiting_deadline,
-                           route_summary, route_details, selected_preference, estimated_total_fare, created_by)
+                           route_summary, route_details, selected_preference, estimated_total_fare, status, created_by)
   values (v_me.airport_code, p_pickup_point, p_proposed_departure, p_waiting_deadline,
-          p_route_summary, p_route_details, p_selected_preference, p_estimated_total_fare, auth.uid())
+          p_route_summary, p_route_details, p_selected_preference, p_estimated_total_fare, 'proposed', auth.uid())
   returning id into v_group;
 
   insert into ride_members (ride_group_id, trip_id, display_name, destination_name, arrival_time, estimated_fare_share, confirmed,
@@ -204,10 +222,54 @@ begin
   update trips set status = 'matched' where id = p_my_trip_id or id = any(p_other_trip_ids);
 
   insert into ride_updates (ride_group_id, trip_id, message, kind)
-  values (v_group, p_my_trip_id, left(v_me.display_name || ' proposed this shared ride', 200), 'success');
+  values (v_group, p_my_trip_id, left(v_me.display_name || ' is in', 200), 'success');
   return v_group;
 end;
 $$;
+
+-- Keeps group and trip status in step with what members do:
+--   everyone accepted        → group 'confirmed'
+--   someone declines a proposal → group 'cancelled', everyone searching again
+--   someone leaves a confirmed ride → their trip ends; if fewer than 2 remain, the group is cancelled
+create or replace function public.ride_members_sync()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_status text;
+  v_active int;
+  v_waiting int;
+begin
+  select status into v_status from ride_groups where id = new.ride_group_id for update;
+
+  if new.pickup_status = 'left' and old.pickup_status <> 'left' then
+    if v_status = 'proposed' then
+      update ride_groups set status = 'cancelled' where id = new.ride_group_id;
+      update trips set status = 'searching'
+       where status = 'matched' and id in (select trip_id from ride_members where ride_group_id = new.ride_group_id);
+    elsif v_status = 'confirmed' then
+      update trips set status = 'cancelled' where id = new.trip_id and status = 'matched';
+      select count(*) into v_active from ride_members where ride_group_id = new.ride_group_id and pickup_status <> 'left';
+      if v_active < 2 then
+        update ride_groups set status = 'cancelled' where id = new.ride_group_id;
+        update trips set status = 'searching'
+         where status = 'matched' and id in (select trip_id from ride_members where ride_group_id = new.ride_group_id and pickup_status <> 'left');
+      end if;
+    end if;
+    return new;
+  end if;
+
+  if v_status = 'proposed' and new.confirmed and not old.confirmed then
+    select count(*) into v_waiting from ride_members
+     where ride_group_id = new.ride_group_id and not confirmed and pickup_status <> 'left';
+    if v_waiting = 0 then
+      update ride_groups set status = 'confirmed' where id = new.ride_group_id;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists ride_members_sync on public.ride_members;
+create trigger ride_members_sync after update of confirmed, pickup_status on public.ride_members
+  for each row execute function public.ride_members_sync();
 
 -- ─────────────────────────── Row Level Security ───────────────────────────
 
@@ -258,7 +320,7 @@ grant update (display_name, flight_number, airport_code, arrival_time, destinati
               destination_lat, destination_lng, dropoff_address, luggage_count, preference, max_detour_minutes, max_budget, status)
   on public.trips to authenticated;
 grant select on public.ride_groups, public.ride_members, public.ride_updates to authenticated;
-grant update (proposed_departure_time, waiting_deadline, status) on public.ride_groups to authenticated;
+grant update (proposed_departure_time, waiting_deadline, pickup_window_started_at, status) on public.ride_groups to authenticated;
 grant update (pickup_status, delay_minutes, confirmed, updated_at) on public.ride_members to authenticated;
 grant insert (ride_group_id, trip_id, message, kind) on public.ride_updates to authenticated;
 

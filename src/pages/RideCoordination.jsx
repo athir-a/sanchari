@@ -1,42 +1,51 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, CarFront, Luggage, MapPin, PartyPopper, Timer, Footprints, LogOut, Plus, ExternalLink, PlaneLanding } from 'lucide-react';
-import { Button, Note, PageHeading, TextButton, useDocumentTitle } from '../components/ui.jsx';
-import { RideStatusCard, JourneyChecklist, MemberList, UpdatesFeed } from '../components/RideStatus.jsx';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { CarFront, Luggage, MapPin, Footprints, LogOut, PlaneLanding, Navigation, Search } from 'lucide-react';
+import { Button, Note, TextButton, useDocumentTitle } from '../components/ui.jsx';
+import { Avatar } from '../components/Avatar.jsx';
+import { AirportMap } from '../components/AirportMap.jsx';
 import { useNow, useDeadlineReminder, ReminderBanner } from '../components/Countdown.jsx';
-import { FlightPanel } from '../components/FlightPanel.jsx';
 import { useAppState } from '../state/AppState.jsx';
 import { IS_LIVE } from '../services/supabaseClient.js';
+import { saveTrip } from '../services/tripService.js';
 import * as rides from '../services/rideService.js';
 import { RIDE_CONFIG } from '../data/config.js';
-import { fmtTime } from '../utils/timeFormatting.js';
+import { getAirport } from '../data/airports.js';
+import { fmtCountdown } from '../utils/timeFormatting.js';
 import { formatINR } from '../utils/fareCalculation.js';
+import { googleMapsSearchUrl } from '../utils/geo.js';
 
-const NEXT = {
-  not_landed: { status: 'landed', label: 'I’ve landed', question: 'Off the plane?', icon: PlaneLanding, hint: 'Tap when your flight is on the ground. Sanchari never assumes this from the clock.' },
-  landed: { status: 'collecting_luggage', label: 'I’m collecting my baggage', question: 'At the belt?', icon: Luggage, hint: 'Tap when you reach baggage claim.' },
-  collecting_luggage: { status: 'walking', label: 'I’m walking to the pickup point', question: 'Got your bags?', icon: Footprints, hint: 'Tap once you have your bags.' },
-  delayed: { status: 'walking', label: 'I’m walking to the pickup point', question: 'On your way now?', icon: Footprints, hint: 'Tap once you’re on your way.' },
-  walking: { status: 'at_pickup', label: 'I’m at the pickup point', question: 'Reached the pickup area?', icon: MapPin, hint: 'Tap when you reach the pickup area.' },
-};
-
-const STATUS_BUTTONS = [
-  ['landed', 'Flight landed', PlaneLanding],
+const NOW_DOING = [
   ['collecting_luggage', 'Collecting baggage', Luggage],
   ['walking', 'Walking to pickup', Footprints],
-  ['at_pickup', 'Ready for pickup', MapPin],
+  ['at_pickup', 'At the pickup point', MapPin],
 ];
 
+const STATUS_SHORT = {
+  not_landed: 'In the air',
+  landed: 'Just landed',
+  collecting_luggage: 'Collecting baggage',
+  walking: 'Walking to pickup',
+  at_pickup: 'At pickup',
+  departed: 'Departed',
+};
+
+function statusText(m) {
+  if (m.pickupStatus === 'delayed') return `Delayed · about ${m.delayMinutes} min`;
+  return STATUS_SHORT[m.pickupStatus] ?? '';
+}
+
 export default function RideCoordination() {
-  useDocumentTitle('Your ride');
-  const { state, update, resetJourney } = useAppState();
+  useDocumentTitle('Meet your co-passengers');
+  const { state, update } = useAppState();
   const navigate = useNavigate();
+  const { search } = useLocation();
+  const tools = new URLSearchParams(search).has('tools');
   const now = useNow(1000);
   const [ride, setRide] = useState(undefined); // undefined = loading, null = not found
   const [error, setError] = useState('');
   const [pending, setPending] = useState(null);
-  const [showDelay, setShowDelay] = useState(false);
-  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [more, setMore] = useState(null); // null | 'delay' | 'leave'
   const busy = useRef(false);
   const rideId = state.activeRideId;
   const myTripId = state.trip?.id;
@@ -56,23 +65,8 @@ export default function RideCoordination() {
   }, [rideId, myTripId]);
 
   const closed = ride?.status === 'departed' || ride?.status === 'cancelled';
-
-  const onFlight = useCallback(
-    async (snap) => {
-      update((s) => (s.trip ? { trip: { ...s.trip, flight: { ...s.trip.flight, ...snap } } } : {}));
-      try {
-        const current = await rides.getRide(rideId, myTripId);
-        if (current) {
-          const next = await rides.recordMyFlight(current, snap);
-          if (next) setRide(next);
-        }
-      } catch {
-        /* the panel already shows the new times */
-      }
-    },
-    [update, rideId, myTripId],
-  );
-  const { reminder, remaining, dismiss } = useDeadlineReminder(ride, now, !!ride && !closed);
+  const started = !!ride?.pickupWindowStartedAt;
+  const { reminder, remaining, dismiss } = useDeadlineReminder(ride, now, !!ride && !closed && started);
 
   const act = useCallback(async (name, fn) => {
     if (busy.current) return;
@@ -82,6 +76,7 @@ export default function RideCoordination() {
     try {
       const next = await fn();
       if (next) setRide(next);
+      setMore(null);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -90,242 +85,177 @@ export default function RideCoordination() {
     }
   }, []);
 
+  async function findAnother() {
+    setPending('again');
+    try {
+      if (state.trip) {
+        const saved = await saveTrip(state.trip, state.trip.id);
+        update({ trip: { ...state.trip, ...saved, flight: state.trip.flight }, activeRideId: null });
+      } else {
+        update({ activeRideId: null });
+      }
+      navigate('/match');
+    } catch (e) {
+      setError(e.message);
+      setPending(null);
+    }
+  }
+
   if (ride === undefined) {
-    return (
-      <div className="stack" style={{ paddingTop: '3rem' }} aria-busy="true" aria-label="Loading your ride">
-        <div className="skeleton" style={{ height: 260 }} />
-        <div className="skeleton" />
-      </div>
-    );
+    return <div className="narrow" style={{ paddingTop: '3rem' }} aria-busy="true" aria-label="Loading your ride"><div className="skeleton" style={{ height: 360 }} /></div>;
   }
 
   if (!ride) {
     return (
-      <>
-        <PageHeading eyebrow="Your ride" title="No active ride.">
-          {error || 'Plan your arrival to find travellers to share a cab with.'}
-        </PageHeading>
-        <Button onClick={() => { update({ activeRideId: null }); navigate('/'); }}>Plan a trip</Button>
-      </>
+      <div className="narrow meet">
+        <p className="eyebrow">Your ride</p>
+        <h1 className="meet-title">No ride yet.</h1>
+        {error && <Note tone="danger">{error}</Note>}
+        <Button onClick={() => { update({ activeRideId: null }); navigate(state.trip ? '/match' : '/'); }}>
+          <Search size={18} aria-hidden /> {state.trip ? 'Find my ride' : 'Plan a ride'}
+        </Button>
+      </div>
     );
   }
 
   const me = ride.members.find((m) => m.isMe);
-  const others = ride.members.filter((m) => !m.isMe && m.pickupStatus !== 'left');
+  // Not accepted yet: the answer is given on the proposal page.
+  if (me && !me.confirmed && ride.status === 'proposed' && me.pickupStatus !== 'left') return <Navigate to="/match" replace />;
+  const active = ride.members.filter((m) => m.pickupStatus !== 'left');
+  const others = active.filter((m) => !m.isMe);
   const notHere = others.filter((m) => m.pickupStatus !== 'at_pickup');
-  const delayed = ride.members.filter((m) => m.pickupStatus === 'delayed');
-  const maxDelay = Math.max(0, ...delayed.map((m) => m.delayMinutes || 0));
-  const deadlinePassed = remaining <= 0;
-  const next = NEXT[me.pickupStatus];
-  const activeCount = ride.members.filter((m) => m.pickupStatus !== 'left').length;
+  const waitingFor = others.filter((m) => !m.confirmed);
+  const meLanded = !['not_landed', 'delayed', 'left'].includes(me.pickupStatus);
+  const timeUp = started && remaining <= 0;
+  const everyoneHere = active.length > 1 && active.every((m) => m.pickupStatus === 'at_pickup');
+  const airport = getAirport(ride.airportCode);
+  const iLeft = me.pickupStatus === 'left';
 
-  const startNew = () => {
-    resetJourney(true);
-    navigate('/');
-  };
+  if (closed || iLeft) {
+    const departed = ride.status === 'departed';
+    return (
+      <div className="narrow meet">
+        <p className="eyebrow">Your ride</p>
+        <h1 className="meet-title">{departed ? <>Have a good <em>ride</em>.</> : iLeft ? 'You left this ride.' : 'This ride was called off.'}</h1>
+        <p className="lead">
+          {departed ? `Your share is about ${formatINR(me.fareShare)}. Settle up with your co-passengers.` : 'Sanchari can look for another group on your road.'}
+        </p>
+        {error && <Note tone="danger">{error}</Note>}
+        <div className="button-row" style={{ marginTop: '1.4rem' }}>
+          {departed ? (
+            <Button onClick={() => { update({ activeRideId: null }); navigate('/'); }}>Plan another ride</Button>
+          ) : (
+            <Button loading={pending === 'again'} onClick={findAnother}><Search size={18} aria-hidden /> Find another ride</Button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <>
-      {reminder && !closed && <ReminderBanner reminder={reminder} remaining={remaining} deadline={ride.waitingDeadline} onDismiss={dismiss} />}
+    <div className="narrow meet">
+      {reminder && <ReminderBanner reminder={reminder} remaining={remaining} deadline={ride.waitingDeadline} onDismiss={dismiss} />}
 
-      <PageHeading eyebrow="After landing · Your ride" title={closed ? (ride.status === 'departed' ? <>You’re on <em>your way</em>.</> : 'This ride was cancelled.') : <>Meet your <em>co-passengers</em>.</>}>
-        {closed
-          ? ride.status === 'departed'
-            ? `Your estimated share is ${formatINR(me.fareShare)}. Settle the split with your co-passengers.`
-            : 'You can plan a new trip any time.'
-          : `${activeCount} riders · ${ride.routeSummary}`}
-      </PageHeading>
+      <p className="eyebrow">Meet your co-passengers</p>
+      <div className={`countdown${!started ? ' idle' : timeUp ? ' over' : remaining <= RIDE_CONFIG.reminderLeadSeconds * 1000 ? ' warn' : ''}`} role="timer" aria-live="off">
+        <span className="countdown-value tabnum">{started ? (timeUp ? '00:00' : fmtCountdown(remaining)) : `${RIDE_CONFIG.pickupWindowMinutes}:00`}</span>
+        <span className="countdown-label">
+          {!started ? `Your ${RIDE_CONFIG.pickupWindowMinutes} minutes start when the first of you lands` : timeUp ? 'Time’s up' : 'left to meet at pickup'}
+        </span>
+      </div>
+      <p className="meet-sub">
+        <a href={googleMapsSearchUrl(`${airport?.name ?? ride.airportCode} arrivals taxi pickup`)} target="_blank" rel="noreferrer">
+          <Navigation size={14} aria-hidden /> {ride.pickupPoint}
+        </a>
+        <span>Your share {formatINR(me.fareShare)}</span>
+      </p>
 
-      <RideStatusCard ride={ride} now={now} />
+      {ride.status === 'proposed' && waitingFor.length > 0 && (
+        <p className="small muted" role="status">Waiting for {waitingFor.map((m) => m.displayName).join(' and ')} to say yes.</p>
+      )}
 
-      <div className="stack" style={{ marginTop: '1.4rem' }}>
-        {ride.persistWarning && <Note tone="accent">{ride.persistWarning}</Note>}
-        {error && <Note tone="danger" title="That didn’t go through" role="alert">{error}</Note>}
+      <AirportMap members={active} />
 
-        {IS_LIVE && !me.confirmed && me.pickupStatus !== 'left' && !closed && (
-          <div className="quiet-note">
-            <span className="icon-box"><CarFront size={22} aria-hidden /></span>
-            <div style={{ flex: 1 }}>
-              <p><strong>You’ve been added to this shared ride.</strong> Confirm so the others know you’re coming.</p>
-              <div className="button-row" style={{ marginTop: '0.8rem' }}>
-                <Button loading={pending === 'confirm'} onClick={() => act('confirm', () => rides.confirmMembership(ride))}>Confirm I’m in</Button>
-                <Button variant="secondary" onClick={() => act('leave', () => rides.leaveRide(ride))}>Decline</Button>
-              </div>
+      <ul className="who-list">
+        {active.map((m) => (
+          <li key={m.id}>
+            <Avatar name={m.displayName} me={m.isMe} small />
+            <span className="who-name">{m.isMe ? 'You' : m.displayName}</span>
+            <span className={`who-status${m.pickupStatus === 'delayed' ? ' late' : m.pickupStatus === 'at_pickup' ? ' here' : ''}`}>{statusText(m)}</span>
+          </li>
+        ))}
+      </ul>
+
+      {error && <Note tone="danger" role="alert">{error}</Note>}
+
+      <section className="meet-action" aria-label="Your status">
+        {timeUp && !everyoneHere ? (
+          <>
+            <h2>{notHere.length ? `${notHere.map((m) => m.displayName).join(' and ')} ${notHere.length === 1 ? 'isn’t' : 'aren’t'} here yet.` : 'Time’s up.'}</h2>
+            <div className="decision">
+              <Button loading={pending === 'depart'} onClick={() => act('depart', () => rides.setRideStatus(ride, 'departed'))}><CarFront size={18} aria-hidden /> Leave with who’s here</Button>
+              <Button variant="secondary" loading={pending === 'extend'} onClick={() => act('extend', () => rides.extendWindow(ride, RIDE_CONFIG.extendByMinutes))}>Wait {RIDE_CONFIG.extendByMinutes} more min</Button>
             </div>
-          </div>
-        )}
-
-        {!closed && deadlinePassed && (
-          <section className="result-card alert" style={{ maxWidth: 'none' }}>
-            <p className="eyebrow"><Timer size={14} aria-hidden style={{ display: 'inline', verticalAlign: '-2px' }} /> Waiting window ended</p>
-            <h2>Time to decide.</h2>
-            <p style={{ marginTop: '0.4rem' }}>
-              {notHere.length ? `${notHere.map((m) => m.displayName).join(', ')} ${notHere.length === 1 ? 'isn’t' : 'aren’t'} at the pickup point yet.` : 'Everyone is at the pickup point.'}
-            </p>
-            <div className="button-row" style={{ marginTop: '1.2rem' }}>
-              <Button loading={pending === 'depart'} onClick={() => act('depart', () => rides.setRideStatus(ride, 'departed'))}>Leave with who’s here</Button>
-              <Button variant="secondary" loading={pending === 'extend'} onClick={() => act('extend', () => rides.shiftDeparture(ride, RIDE_CONFIG.extendByMinutes))}>
-                Wait {RIDE_CONFIG.extendByMinutes} more minutes
-              </Button>
+          </>
+        ) : everyoneHere ? (
+          <>
+            <h2>Everyone’s here.</h2>
+            <Button block loading={pending === 'depart'} onClick={() => act('depart', () => rides.setRideStatus(ride, 'departed'))}><CarFront size={18} aria-hidden /> We’ve left together</Button>
+          </>
+        ) : !meLanded ? (
+          <Button block className="big-button" loading={pending === 'landed'} onClick={() => act('landed', () => rides.updateMyStatus(ride, 'landed'))}>
+            <PlaneLanding size={20} aria-hidden /> I’ve landed
+          </Button>
+        ) : (
+          <>
+            <h2 id="doing-label">What are you doing now?</h2>
+            <div className="doing" role="group" aria-labelledby="doing-label">
+              {NOW_DOING.map(([s, label, Icon]) => (
+                <Button key={s} variant="secondary" disabled={!!pending} aria-pressed={me.pickupStatus === s} onClick={() => act(s, () => rides.updateMyStatus(ride, s))}>
+                  <Icon size={18} aria-hidden /> {label}
+                </Button>
+              ))}
             </div>
-          </section>
+          </>
         )}
+      </section>
 
-        {!closed && !deadlinePassed && delayed.length > 0 && (
-          <div className="note accent" role="status">
-            <strong>
-              <AlertTriangle size={15} aria-hidden style={{ display: 'inline', verticalAlign: '-2px', marginRight: 6 }} />
-              {delayed.map((m) => (m.isMe ? 'You need' : `${m.displayName} needs`)).join(', ')} about {maxDelay} more min.
-            </strong>{' '}
-            Departure is still {fmtTime(ride.proposedDepartureTime)}.{' '}
-            <TextButton style={{ color: 'var(--accent)', minHeight: 0 }} disabled={!!pending} onClick={() => act('shift', () => rides.shiftDeparture(ride, maxDelay))}>
-              Push departure by {maxDelay} min
-            </TextButton>
+      <div className="meet-more">
+        {more === 'delay' ? (
+          <div className="delay-picker" role="group" aria-label="How late">
+            <span className="small">Delayed by about</span>
+            {[15, 30, 60].map((m) => (
+              <Button key={m} variant="secondary" disabled={!!pending} onClick={() => act('delay', () => rides.updateMyStatus(ride, 'delayed', m))}>{m} min</Button>
+            ))}
+            <TextButton onClick={() => setMore(null)}>Cancel</TextButton>
           </div>
+        ) : more === 'leave' ? (
+          <div className="delay-picker">
+            <span className="small">Leave this ride? The others will see it.</span>
+            <Button variant="warning" loading={pending === 'leave'} onClick={() => act('leave', () => rides.leaveRide(ride))}><LogOut size={16} aria-hidden /> Leave</Button>
+            <TextButton onClick={() => setMore(null)}>Keep my seat</TextButton>
+          </div>
+        ) : (
+          <>
+            {!meLanded && <TextButton onClick={() => setMore('delay')}>Flight delayed?</TextButton>}
+            <TextButton danger onClick={() => setMore('leave')}>Can’t make it</TextButton>
+          </>
         )}
       </div>
 
-      <section className="workspace" style={{ marginTop: '1.8rem' }}>
-        <div className="stack">
-          {!closed ? (
-            <div className="input-card">
-              {next ? (
-                <>
-                  <p className="eyebrow">Your next step</p>
-                  <h2>{next.question}</h2>
-                  <p style={{ margin: '0.3rem 0 1.2rem' }}>{next.hint}</p>
-                  <Button block loading={pending === next.status} onClick={() => act(next.status, () => rides.updateMyStatus(ride, next.status))}>
-                    <next.icon size={18} aria-hidden /> {next.label}
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <p className="eyebrow">You’re at the pickup point</p>
-                  <h2>{notHere.length ? 'Waiting for the others.' : 'Everyone’s here.'}</h2>
-                  <p style={{ margin: '0.3rem 0 1.2rem' }}>
-                    {notHere.length ? `Still to arrive: ${notHere.map((m) => m.displayName).join(', ')}.` : 'Book the cab together and head off.'}
-                  </p>
-                  <Button block loading={pending === 'depart'} onClick={() => act('depart', () => rides.setRideStatus(ride, 'departed'))}>
-                    <CarFront size={18} aria-hidden /> We’ve left together
-                  </Button>
-                </>
-              )}
-
-              <div className="form-section" style={{ marginTop: '1.6rem' }}>
-                <h3 id="status-label">Or set your status</h3>
-                <div className="status-grid" role="group" aria-labelledby="status-label">
-                  {STATUS_BUTTONS.map(([s, label, Icon]) => (
-                    <Button key={s} variant="secondary" disabled={!!pending} aria-pressed={me.pickupStatus === s} onClick={() => act(s, () => rides.updateMyStatus(ride, s))}>
-                      <Icon size={18} aria-hidden /> {label}
-                    </Button>
-                  ))}
-                  <Button variant="warning" disabled={!!pending} aria-expanded={showDelay} aria-pressed={me.pickupStatus === 'delayed'} onClick={() => setShowDelay((v) => !v)}>
-                    <AlertTriangle size={18} aria-hidden /> I need more time
-                  </Button>
-                </div>
-                {showDelay && (
-                  <div className="note accent delay-picker">
-                    <span>I need about</span>
-                    {[10, 20, 30].map((m) => (
-                      <Button key={m} variant="secondary" disabled={!!pending} onClick={() => { setShowDelay(false); act('delay', () => rides.updateMyStatus(ride, 'delayed', m)); }}>
-                        {m} min
-                      </Button>
-                    ))}
-                  </div>
-                )}
-              </div>
+      {tools && (
+        <details className="disclosure" style={{ marginTop: '2rem' }}>
+          <summary>Testing tools<span className="plus" aria-hidden>+</span></summary>
+          <div className="disclosure-body">
+            <div className="button-row">
+              <Button variant="secondary" disabled={!!pending} onClick={() => act('t1', () => rides.setDeadlineFromNow(ride, 130))}>Window ends in 2:10</Button>
+              <Button variant="secondary" disabled={!!pending} onClick={() => act('t2', () => rides.setDeadlineFromNow(ride, 20))}>Window ends in 0:20</Button>
+              {!IS_LIVE && <Button variant="secondary" disabled={!!pending} onClick={() => act('sim', () => rides.simulateProgress(ride))}>Move a co-rider forward</Button>}
+              {!IS_LIVE && <Button variant="secondary" disabled={!!pending} onClick={() => act('simd', () => rides.simulateDelay(ride))}>Delay a co-rider</Button>}
             </div>
-          ) : (
-            <div className="input-card stack-sm">
-              <span className={`icon-box${ride.status === 'departed' ? '' : ' accent'}`}>
-                {ride.status === 'departed' ? <PartyPopper size={22} aria-hidden /> : <LogOut size={22} aria-hidden />}
-              </span>
-              <h2>{ride.status === 'departed' ? 'Have a good ride.' : 'Ride cancelled.'}</h2>
-              <div className="button-row">
-                <Button onClick={startNew}><Plus size={18} aria-hidden /> Plan another trip</Button>
-                {ride.status === 'departed' && ride.option?.mapsUrl && (
-                  <a className="button secondary" href={ride.option.mapsUrl} target="_blank" rel="noreferrer">
-                    <ExternalLink size={18} aria-hidden /> Open route in Maps
-                  </a>
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="input-card">
-            <p className="eyebrow">The plan</p>
-            <JourneyChecklist ride={ride} />
           </div>
-
-          <details className="disclosure">
-            <summary>Testing tools — reminder and demo controls<span className="plus" aria-hidden>+</span></summary>
-            <div className="disclosure-body">
-              <div className="stack-sm">
-                <h3>Test the 2-minute reminder</h3>
-                <p className="small">Sets a real stored deadline. The reminder fires once when 2:00 remain — reloading won’t repeat it.</p>
-                <div className="button-row">
-                  <Button variant="secondary" disabled={closed || !!pending} onClick={() => act('t1', () => rides.setDeadlineFromNow(ride, 130))}>Deadline in 2:10</Button>
-                  <Button variant="secondary" disabled={closed || !!pending} onClick={() => act('t2', () => rides.setDeadlineFromNow(ride, 20))}>Deadline in 0:20</Button>
-                </div>
-                <p className="small">
-                  Vibration: {typeof navigator !== 'undefined' && 'vibrate' in navigator ? 'available in this browser (Android browsers usually allow it after you’ve tapped the page)' : 'not available in this browser — you’ll see the on-screen alert only'}. A web page can’t vibrate or notify while it’s closed or in the background.
-                </p>
-              </div>
-              {!IS_LIVE && (
-                <div className="stack-sm form-section">
-                  <h3>Simulate co-passengers (demo)</h3>
-                  <div className="button-row">
-                    <Button variant="secondary" disabled={closed || !!pending || !others.some((m) => m.pickupStatus !== 'at_pickup')} onClick={() => act('sim', () => rides.simulateProgress(ride))}>
-                      <PlaneLanding size={18} aria-hidden /> Advance someone
-                    </Button>
-                    <Button variant="secondary" disabled={closed || !!pending || !others.some((m) => !['at_pickup', 'delayed'].includes(m.pickupStatus))} onClick={() => act('simd', () => rides.simulateDelay(ride))}>
-                      <AlertTriangle size={18} aria-hidden /> Someone’s delayed
-                    </Button>
-                  </div>
-                  <p className="small">Demo co-passengers only change when you use these controls — Sanchari never assumes someone has arrived.</p>
-                </div>
-              )}
-            </div>
-          </details>
-        </div>
-
-        <aside className="quick-panel" aria-label="Your flight, riders and updates">
-          <div>
-            <p className="eyebrow">Your flight</p>
-            <FlightPanel trip={state.trip} ride={ride} onFlight={onFlight} busy={!!pending} onProposeShift={(m) => act('shift', () => rides.shiftDeparture(ride, m))} />
-          </div>
-          <div className="divider" />
-          <div>
-            <p className="eyebrow">Who’s riding</p>
-            <MemberList ride={ride} now={now} />
-          </div>
-          <div className="divider" />
-          <div>
-            <h3>Updates</h3>
-            <UpdatesFeed updates={ride.updates} now={now} />
-          </div>
-          {!closed && (
-            <>
-              <div className="divider" />
-              {confirmLeave ? (
-                <div className="stack-sm">
-                  <p className="small">Leave this ride? Your co-passengers will see that you left.</p>
-                  <div className="button-row">
-                    <Button variant="secondary" onClick={() => setConfirmLeave(false)}>Keep my seat</Button>
-                    <Button variant="warning" loading={pending === 'leave'} onClick={() => act('leave', () => rides.leaveRide(ride))}>
-                      <LogOut size={18} aria-hidden /> Yes, leave
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <TextButton danger disabled={!!pending} onClick={() => setConfirmLeave(true)}>
-                  <LogOut size={15} aria-hidden /> I can’t continue — leave this ride
-                </TextButton>
-              )}
-            </>
-          )}
-        </aside>
-      </section>
-    </>
+        </details>
+      )}
+    </div>
   );
 }

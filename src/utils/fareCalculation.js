@@ -1,5 +1,5 @@
 import { FARE_ASSUMPTIONS as F, PREFERENCES } from '../data/config.js';
-import { getAirport, getZone } from '../data/airports.js';
+import { getAirport, hubFor } from '../data/airports.js';
 import { roadKm, haversineKm, orderStops, googleMapsDirectionsUrl } from './geo.js';
 
 const round = (n) => Math.round(n);
@@ -115,8 +115,8 @@ function balancedStops(members, airport) {
 
 function dropPointFor(kind, trip, isMe, sharedStops) {
   if (kind === 'cheapest') {
-    const zone = getZone(trip.destinationZone);
-    return { key: `hub:${zone.hub.name}`, name: zone.hub.name, lat: zone.hub.lat, lng: zone.hub.lng, transitMode: zone.hub.mode };
+    const hub = hubFor(trip.destinationId, trip.destinationZone);
+    return { key: `hub:${hub.name}`, name: hub.name, lat: hub.lat, lng: hub.lng, transitMode: hub.mode };
   }
   if (kind === 'balanced') return sharedStops.get(trip.id);
   return doorPoint(trip, isMe);

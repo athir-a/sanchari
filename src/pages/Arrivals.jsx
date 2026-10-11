@@ -62,7 +62,7 @@ export default function Arrivals() {
   return (
     <>
       <PageHeading eyebrow="Cochin International Airport · Arrivals" title={<>Find <em>your</em> flight.</>}>
-        Pick your arriving flight so Sanchari can plan around its real arrival time. Data comes from Sanchari’s server and the licensed provider configured there — times are shown in IST.
+        Pick your flight and Sanchari keeps your landing time up to date. Times are in IST.
       </PageHeading>
 
       <div className="controls-row" style={{ marginBottom: '1.6rem' }}>

@@ -1,12 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { readJSON, writeJSON } from '../services/storage.js';
-import { MATCHING_CONFIG } from '../data/config.js';
 
 export const EMPTY_FORM = {
   displayName: '',
   flightNumber: '',
   airportCode: 'COK',
   arrivalLocal: '',
+  district: '',
   destinationId: '',
   dropoffAddress: '',
   luggageCount: 1,
@@ -19,16 +19,18 @@ export const EMPTY_FORM = {
 const INITIAL = {
   form: EMPTY_FORM,
   trip: null, // saved trip (has id)
-  arrivalWindow: MATCHING_CONFIG.arrivalWindowMinutes,
-  selected: [], // selected co-passenger trips
-  optionKind: null,
+  declined: [], // trip ids of travellers you said "not for me" to
   activeRideId: null,
 };
 
 const Ctx = createContext(null);
 
 export function AppStateProvider({ children }) {
-  const [state, setState] = useState(() => ({ ...INITIAL, ...readJSON('app', {}) }));
+  const [state, setState] = useState(() => {
+    const saved = readJSON('app', {});
+    const form = { ...EMPTY_FORM, ...(saved.form || {}) };
+    return { ...INITIAL, ...saved, form, declined: saved.declined || [] };
+  });
 
   useEffect(() => {
     writeJSON('app', state);

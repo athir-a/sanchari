@@ -1,7 +1,7 @@
-import { getDestination } from './airports.js';
+import { getDestination, getDistrict } from './airports.js';
 
-// Fictional passengers for demo mode. Arrival times are relative to YOUR
-// arrival so the demo works for any date and time you enter.
+// Fictional travellers used when Sanchari runs without a database (local mode).
+// Arrival times are relative to YOUR arrival so it works for any date and time.
 // The default demo trip (COK → Thrissur Swaraj Round, Balanced, 2 bags) produces:
 //   matches:  Ananya, Meera, Joseph (Thrissur area); Arjun, Rohan, Priya (on your route)
 //   rejected: Kabir (time), Farah (Kakkanad is off-route), Vikram (luggage), Ishaan (airport), and others
@@ -24,10 +24,21 @@ const SEED = [
   { id: 'demo-ishaan', name: 'Ishaan', airport: 'TRV', offset: 4, dest: 'cok-thrissur-round', bags: 1, pref: 'balanced', flight: '6E 515' },
 ];
 
+/** Two extra travellers on the road to your district, so every district has someone to ride with. */
+function routeCompanions(trip) {
+  const district = getDistrict(trip?.destinationZone);
+  if (!district || ['thrissur', 'ernakulam'].includes(district.id)) return [];
+  const route = district.route;
+  return [
+    { id: 'demo-devika', name: 'Devika', airport: 'COK', offset: 7, dest: route[route.length - 1], bags: 1, pref: trip.preference, flight: '6E 482' },
+    { id: 'demo-sameer', name: 'Sameer', airport: 'COK', offset: -6, dest: route[Math.max(0, route.length - 3)], bags: 1, pref: trip.preference, flight: 'AI 681' },
+  ];
+}
+
 /** Build candidate trips around the given arrival time (ISO string). */
-export function buildDemoCandidates(anchorArrivalIso) {
+export function buildDemoCandidates(anchorArrivalIso, trip = null) {
   const anchor = new Date(anchorArrivalIso).getTime();
-  return SEED.map((p) => {
+  return [...SEED, ...routeCompanions(trip)].map((p) => {
     const d = getDestination(p.dest);
     return {
       id: p.id,
@@ -55,6 +66,7 @@ export const DEMO_TRIP = {
   airportCode: 'COK',
   destinationId: 'cok-thrissur-round',
   dropoffAddress: 'Near Vadakkumnathan Temple, East Fort',
+  district: 'thrissur',
   luggageCount: 2,
   preference: 'balanced',
   maxDetourMinutes: 25,

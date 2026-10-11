@@ -470,7 +470,7 @@ details.disclosure[open] .plus { transform: rotate(45deg); }
   .page-heading { padding: 2.2rem 0 1.4rem; }
   .page-heading h1 { font-size: 2.4rem; }
   .header-inner { flex-direction: column; align-items: stretch; gap: 0.6rem; padding: 0.9rem 0; }
-  .site-nav ul { display: grid; grid-template-columns: 1fr 1fr; gap: 0.3rem; }
+  .site-nav ul { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.3rem; }
   .nav-link { justify-content: center; }
   .input-card, .result-card { padding: 1.4rem; }
   .card { padding: 1.3rem; }
@@ -483,6 +483,91 @@ details.disclosure[open] .plus { transform: rotate(45deg); }
   .utility-inner { flex-wrap: wrap; padding: 0.4rem 0; }
   .status-grid { grid-template-columns: 1fr; }
   .passenger-foot { flex-wrap: wrap; }
+}
+
+/* ---------- Plan form ---------- */
+.plan-card { max-width: 760px; margin-inline: auto; }
+.narrow { max-width: 720px; margin-inline: auto; width: 100%; }
+
+/* ---------- Destination picker: the road from the airport ---------- */
+.route-picker { display: grid; gap: 0.3rem; }
+.route-origin { position: relative; padding-left: 1.7rem; margin: 0.2rem 0 0.3rem; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.route-origin::before { content: ""; position: absolute; left: 4px; top: 50%; transform: translateY(-50%); width: 12px; height: 12px; border-radius: 50%; background: var(--brand); }
+.route-line { list-style: none; margin: 0; padding: 0; display: grid; }
+.route-line li { position: relative; padding-left: 1.7rem; }
+.route-line li::before { content: ""; position: absolute; left: 9px; top: -0.6rem; bottom: 0; width: 2px; background: var(--result-line); }
+.route-line li:last-child::before { bottom: 50%; }
+.route-line li::after { content: ""; position: absolute; left: 4px; top: 50%; transform: translateY(-50%); width: 12px; height: 12px; border-radius: 50%; background: var(--paper); border: 2px solid var(--primary); }
+.route-line li:has(.route-stop[aria-checked="true"])::after { background: var(--primary); box-shadow: 0 0 0 4px var(--soft); }
+.route-stop {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; width: 100%; min-height: 44px;
+  padding: 0.45rem 0.8rem; border: 1px solid transparent; border-radius: 8px; background: none; cursor: pointer;
+  font: inherit; font-size: 0.94rem; color: var(--ink); text-align: left;
+}
+.route-stop:hover { background: var(--soft); }
+.route-stop[aria-checked="true"] { background: var(--soft); border-color: var(--primary); font-weight: 600; }
+.route-district { font-size: 0.72rem; font-weight: 400; color: var(--muted); white-space: nowrap; }
+.route-more-label { margin: 1rem 0 0.3rem; font-size: 0.82rem; font-weight: 600; color: var(--ink); }
+.route-more { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.route-more .route-stop { width: auto; border-color: var(--line); background: var(--paper); }
+.route-more .route-stop[aria-checked="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+
+/* ---------- Ride proposal ---------- */
+.proposal { max-width: none; display: grid; gap: 1.4rem; }
+.rider-row { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 1rem 1.8rem; }
+.rider-row li { display: flex; align-items: center; gap: 0.7rem; min-width: 0; }
+.rider-row strong { color: var(--ink); }
+.share-line { padding-block: 1.3rem; border-block: 1px solid var(--line); }
+.ride-facts { display: grid; gap: 0.9rem; margin: 0; }
+.ride-facts > div { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: 1rem; }
+.ride-facts dt { font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+.ride-facts dd { margin: 0; color: var(--ink); font-size: 0.94rem; line-height: 1.5; }
+.mini-route { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.25rem; }
+.mini-route li + li::before { content: "→ "; color: var(--primary); font-weight: 700; }
+details.compare summary { font-size: 0.94rem; }
+.compare-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+.compare-list li { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.94rem; color: var(--ink); }
+.compare-list li span:last-child { color: var(--muted); }
+.decision { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+
+/* ---------- Meet page ---------- */
+.meet { padding-top: 2.6rem; display: grid; gap: 1.3rem; }
+.meet .eyebrow { margin: 0; }
+.meet-title { font-size: clamp(2.4rem, 6vw, 3.4rem); }
+.countdown { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 1.1rem; }
+.countdown-value { font-family: var(--serif); font-size: clamp(3.6rem, 13vw, 5.4rem); line-height: 1; letter-spacing: -0.02em; color: var(--ink); }
+.countdown.idle .countdown-value { color: var(--result-line); }
+.countdown.warn .countdown-value, .countdown.over .countdown-value { color: var(--accent); }
+.countdown-label { font-size: 0.95rem; color: var(--muted); max-width: 26ch; line-height: 1.45; }
+.meet-sub { display: flex; flex-wrap: wrap; gap: 0.3rem 1.4rem; margin: 0; font-size: 0.88rem; color: var(--muted); }
+.meet-sub a { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--primary); font-weight: 600; text-decoration: none; }
+.airport-map { margin: 0; padding: 0.8rem; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; }
+.airport-map svg { display: block; width: 100%; height: auto; max-height: 260px; margin-inline: auto; }
+.map-label { font: 600 9px var(--sans); fill: var(--muted); letter-spacing: 0.03em; }
+.map-dot circle { fill: var(--paper); stroke: var(--primary); stroke-width: 2; }
+.map-dot text { font: 700 10px var(--sans); fill: var(--primary); }
+.map-dot.me circle { fill: var(--primary); }
+.map-dot.me text { fill: var(--on-primary); }
+.map-dot.late circle { stroke: var(--accent); }
+.map-dot.late text { fill: var(--accent); }
+.who-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+.who-list li { display: flex; align-items: center; gap: 0.8rem; }
+.who-list .avatar.sm { width: 34px; height: 34px; font-size: 0.95rem; border-radius: 9px; }
+.who-name { flex: 1; min-width: 0; font-weight: 600; color: var(--ink); }
+.who-status { font-size: 0.86rem; color: var(--muted); text-align: right; }
+.who-status.here { color: var(--primary); font-weight: 600; }
+.who-status.late { color: var(--accent); font-weight: 600; }
+.meet-action { display: grid; gap: 0.9rem; padding-top: 0.4rem; }
+.meet-action h2 { font-size: 1.5rem; }
+.button.big-button { min-height: 64px; font-size: 1.05rem; }
+.doing { display: grid; gap: 0.6rem; }
+.doing .button { justify-content: flex-start; }
+.meet-more { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem 1.6rem; }
+
+@media (max-width: 700px) {
+  .decision { grid-template-columns: 1fr; }
+  .ride-facts > div { grid-template-columns: 1fr; gap: 0.2rem; }
+  .meet { padding-top: 1.6rem; }
 }
 
 /* ---------- Motion preferences ---------- */

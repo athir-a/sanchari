@@ -114,7 +114,7 @@ export function createDemoProvider(deps = {}) {
   };
   return {
     id: 'demo',
-    label: 'Demo flights (sample data, not real)',
+    label: 'Sample schedule',
     configured: true,
     isDemo: true,
     maxWindowHours: 6,

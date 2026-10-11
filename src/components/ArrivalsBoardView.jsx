@@ -40,11 +40,6 @@ export function FreshnessBar({ data, loading }) {
           {loading && ' · refreshing…'}
         </span>
       </div>
-      {data.provider.isDemo && (
-        <Note tone="accent" role="note">
-          <strong>Demo data.</strong> These are generated sample arrivals (flight numbers 9xxx) for demonstrating Sanchari — not real Cochin flights. Connect a licensed provider for live data.
-        </Note>
-      )}
       {state === 'stale' && <Note tone="accent" role="alert"><strong>These times may be out of date.</strong> {data.notice || 'Sanchari couldn’t reach the flight-data provider and is showing the last data it received.'}</Note>}
       {!data.complete && state !== 'stale' && <Note tone="accent" role="alert">{data.notice}</Note>}
     </div>

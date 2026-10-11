@@ -108,13 +108,13 @@ function explain(me, other, metrics) {
   if (basis === 'actual') reasons.push(`${other.displayName}’s flight has landed (verified)`);
   else if (basis === 'estimated') reasons.push(`Using ${other.displayName}’s live estimated arrival`);
   if (me.destinationId && me.destinationId === other.destinationId) {
-    reasons.push(`Same area: ${other.destinationName}`);
-  } else if (me.destinationZone === other.destinationZone) {
-    reasons.push(`Both heading to ${getZone(other.destinationZone)?.name ?? 'the same zone'}`);
-  } else if (gapKm <= MATCHING_CONFIG.maxDropoffGapKm) {
-    reasons.push(`Drop-offs about ${gapKm.toFixed(1)} km apart`);
-  } else {
+    reasons.push(`Same drop-off: ${other.destinationName}`);
+  } else if (gapKm > MATCHING_CONFIG.maxDropoffGapKm) {
     reasons.push(metrics.meFirst ? `${other.destinationName} is further along your route` : `${other.destinationName} is on your way`);
+  } else if (me.destinationZone === other.destinationZone) {
+    reasons.push(`Both heading to ${getZone(other.destinationZone, other.destinationId)?.name ?? 'the same district'}`);
+  } else {
+    reasons.push(`Drop-offs about ${gapKm.toFixed(1)} km apart`);
   }
   reasons.push(detour <= 3 ? 'Almost no detour' : `Adds about ${detour} min`);
   if (me.preference === other.preference) reasons.push(`Also prefers ${PREFERENCES[other.preference].label}`);
@@ -183,4 +183,44 @@ export function canJoinGroup(me, selected, candidate, overrides = {}) {
   const bags = group.reduce((s, t) => s + (t.luggageCount || 0), 0);
   if (!vehicleFor(group.length, bags)) return { ok: false, reason: `${bags} bags for ${group.length} people won't fit one cab` };
   return { ok: true };
+}
+
+/** One option for a whole group: everyone's shared choice, or Balanced as the middle ground. */
+export function groupPreference(trips) {
+  const prefs = new Set(trips.map((t) => t.preference));
+  return prefs.size === 1 ? [...prefs][0] : 'balanced';
+}
+
+/** True when the group's option leaves every rider paying less than a solo cab. */
+export function everyoneSaves(me, others) {
+  const kind = groupPreference([me, ...others]);
+  const options = buildRideOptions(me, others);
+  const o = options.find((x) => x.kind === kind && x.available) || options.find((x) => x.kind === 'balanced' && x.available);
+  if (!o) return false;
+  const trips = [me, ...others];
+  return o.members.every((m) => m.cost < soloDirect(trips.find((t) => t.id === m.tripId)).fare);
+}
+
+/**
+ * Sanchari groups riders itself: take the best-scoring compatible travellers, best first,
+ * as long as each one fits with everyone already in the group (max 3 co-riders).
+ * Returns null when nobody fits yet.
+ */
+export function proposeGroup(me, candidateTrips, { exclude = [], ...overrides } = {}) {
+  const pool = candidateTrips.filter((c) => !exclude.includes(c.id));
+  const { matches } = findCompatiblePassengers(me, pool, overrides);
+  const others = [];
+  for (const m of matches) {
+    if (others.length >= MATCHING_CONFIG.maxCoPassengers) break;
+    if (!canJoinGroup(me, others, m.trip, overrides).ok) continue;
+    // Only add someone if sharing still saves every rider money compared with riding alone.
+    if (!everyoneSaves(me, [...others, m.trip])) continue;
+    others.push(m.trip);
+  }
+  if (!others.length) return null;
+  const options = buildRideOptions(me, others);
+  const kind = groupPreference([me, ...others]);
+  const option = options.find((o) => o.kind === kind && o.available) || options.find((o) => o.kind === 'balanced' && o.available) || options.find((o) => o.available);
+  if (!option) return null;
+  return { others, options, option, reasons: Object.fromEntries(matches.map((m) => [m.trip.id, m.reasons])) };
 }

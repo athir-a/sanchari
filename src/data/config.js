@@ -1,15 +1,13 @@
 // All tunable thresholds, weights and fare assumptions live here.
-// Every fare and time is a DEMO ESTIMATE — not a live quote.
+// Fares and times are estimates from fixed assumptions — not live quotes.
 
 export const MATCHING_CONFIG = {
-  arrivalWindowMinutes: 45,
-  widenedArrivalWindowMinutes: 90,
+  // Riders are grouped only when they're likely ready within the 30-minute pickup window.
+  arrivalWindowMinutes: 30,
   // Straight-line distance between two drop-offs above which riders aren't paired.
   maxDropoffGapKm: 7,
   // Extra minutes a shared route may add for either rider.
   maxDetourMinutes: 25,
-  // Riders can pick how much extra time they accept; the stricter of two riders wins.
-  detourChoices: [10, 15, 25, 40],
   // Co-passengers the user can add (user + 3 = 4 people).
   maxCoPassengers: 3,
   weights: {
@@ -46,11 +44,11 @@ export const FARE_ASSUMPTIONS = {
   },
   transit: {
     base: 20,
-    perKm: 2.5,
-    cap: 90,
+    perKm: 1.2,
+    cap: 650,
     kmh: 38, // KSRTC bus / Kochi Metro incl. stops
     waitMinutes: 10,
-    secondTransferAboveKm: 70,
+    secondTransferAboveKm: 150,
   },
   auto: {
     base: 30,
@@ -65,8 +63,9 @@ export const FARE_ASSUMPTIONS = {
 
 export const RIDE_CONFIG = {
   // Proposed departure = when the last rider is likely ready (see utils/readiness.js),
-  // rounded up to 5 minutes. Waiting deadline = proposed departure + this.
-  waitAfterDepartureMinutes: 10,
+  // rounded up to 5 minutes. The pickup window is always 30 minutes; it starts when
+  // the first rider says they've landed.
+  pickupWindowMinutes: 30,
   reminderLeadSeconds: 120,
   extendByMinutes: 10,
 };

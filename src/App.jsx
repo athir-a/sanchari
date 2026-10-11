@@ -1,9 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppStateProvider } from './state/AppState.jsx';
 import ArrivalSetup from './pages/ArrivalSetup.jsx';
-import MatchResults from './pages/MatchResults.jsx';
-import RideComparison from './pages/RideComparison.jsx';
-import RideConfirmation from './pages/RideConfirmation.jsx';
+import MatchProposal from './pages/MatchProposal.jsx';
 import RideCoordination from './pages/RideCoordination.jsx';
 import Arrivals from './pages/Arrivals.jsx';
 import { LiveInviteCheck } from './components/LiveInviteCheck.jsx';
@@ -15,15 +13,17 @@ export default function App() {
       <BrowserRouter>
         <LiveInviteCheck />
         <SiteLayout>
-        <Routes>
-          <Route path="/" element={<ArrivalSetup />} />
-          <Route path="/arrivals" element={<Arrivals />} />
-          <Route path="/matches" element={<MatchResults />} />
-          <Route path="/compare" element={<RideComparison />} />
-          <Route path="/confirm" element={<RideConfirmation />} />
-          <Route path="/ride" element={<RideCoordination />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+          <Routes>
+            <Route path="/" element={<ArrivalSetup />} />
+            <Route path="/arrivals" element={<Arrivals />} />
+            <Route path="/match" element={<MatchProposal />} />
+            <Route path="/ride" element={<RideCoordination />} />
+            {/* Older links */}
+            <Route path="/matches" element={<Navigate to="/match" replace />} />
+            <Route path="/compare" element={<Navigate to="/match" replace />} />
+            <Route path="/confirm" element={<Navigate to="/match" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </SiteLayout>
       </BrowserRouter>
     </AppStateProvider>

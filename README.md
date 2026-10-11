@@ -1,8 +1,8 @@
 # Sanchari
 
-**Flight-aware shared rides from Cochin International Airport (COK) to Thrissur via Aluva, Angamaly and Chalakudy.**
+**Land together. Ride home together.**
 
-Sanchari matches travellers who land at COK around the same time and whose drop-offs are close together **or lie along each other's route**. It compares a cheapest, a balanced and a direct shared journey. It splits the cab fare by the distance each rider shares, and it coordinates the meet-up at the pickup point after landing.
+Sanchari is a flight-aware ride-sharing app for people landing at Cochin International Airport. You enter your flight and where you're headed in any of Kerala's 14 districts. Sanchari finds travellers who land around the same time and are going the same way, and puts you in one shared cab. It splits the fare by the distance each person rides, and helps everyone meet at the pickup point within a 30-minute window.
 
 > This is a hackathon prototype. It does not book taxis, take payments or verify identities. Every fare and travel time is an **estimate**.
 
@@ -31,17 +31,16 @@ Sanchari has a backend flight-data layer (`/api/flights/*`). It includes an arri
 
 Full details are in **[docs/FLIGHT_DATA.md](docs/FLIGHT_DATA.md)**: endpoints, fields, caching, freshness labels, time zones, testing, troubleshooting and adding providers.
 
-## Demo mode vs live mode
+## Local mode vs database mode
 
-| | Demo mode (default) | Live mode |
+| | Local mode (default) | Database mode |
 |---|---|---|
 | Turned on by | No Supabase variables set | `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` set |
-| Co-passengers | Fictional demo passengers, placed around *your* arrival time | Real trips from other users of your Supabase project |
+| Co-passengers | Fictional travellers, placed around *your* arrival time | Real trips from other users of your Supabase project |
 | Storage | This browser (`localStorage`). Survives reloads. | Supabase Postgres with Row Level Security |
 | Status sync | Same browser, including across tabs | Supabase Realtime, with a 20 s poll as a fallback |
-| Badge | Amber **Demo** pill in the header | Teal **Live** pill |
 
-The two modes are never mixed: live mode never shows demo passengers.
+The two modes are never mixed, and the interface doesn't label which one is running. Use database mode for anything shown to real users.
 
 ## Live mode setup (Supabase)
 
@@ -89,32 +88,33 @@ The palette is built around the brand cyan **#4EC6D6**:
 
 Hard rules (any one rejects the pair, and the reason is shown):
 1. Same airport
-2. Arrival within **±45 min** (configurable; the user can widen it to ±90)
+2. Likely ready within **30 min** of each other (the length of the pickup window)
 3. Drop-offs within **7 km** of each other, **or** one drop-off on the other's way (a Chalakudy rider fits a Thrissur trip)
 4. Bags fit in one vehicle (sedan 4, SUV 6)
 5. Compatible preferences: a *Direct* rider is never paired with a *Cheapest* rider
-6. Estimated detour within the stricter of the two riders' own limits (10, 15, 25 or 40 min, chosen on the form)
+6. Estimated detour of at most 25 min
 
 The weighted score uses time 35%, destination 30%, preference 15%, detour 12% and luggage 8%. All thresholds and weights are in `src/data/config.js`.
 
-When you pick several people, `canJoinGroup()` checks every pair plus the capacity of the whole group.
+Nobody picks co-riders by hand. `proposeGroup()` takes the best-scoring travellers in order and adds each one if they fit with everyone already in the group (`canJoinGroup()`) and the shared fare is still lower than a solo cab **for every rider**. The group gets one option: the shared preference, or Balanced when preferences differ. Each rider answers **I'm in** or **Not for me**. In live mode the first acceptance creates a `proposed` ride, and it becomes `confirmed` once everyone has accepted (trigger `ride_members_sync`). A decline cancels the proposal, everyone goes back to searching, and those travellers aren't proposed together again.
 
 **Honest limits:** distances are straight-line × 1.35 road factor, using curated area centres in `src/data/airports.js`. Matching two areas is not the same as checking a real road route, and no routing API is used.
 
 ### Fares (`src/utils/fareCalculation.js`)
-The same assumptions apply to every option: ₹120 airport pickup + ₹100 base + ₹22/km, with an SUV at ×1.35. Metro or bus is ₹20 + ₹2.5/km, capped at ₹90. Auto is ₹30 for the first 2 km, then ₹15/km.
+The same assumptions apply to every option: ₹120 airport pickup + ₹100 base + ₹22/km, with an SUV at ×1.35. Metro or bus is ₹20 + ₹1.2/km, capped at ₹650. Auto is ₹30 for the first 2 km, then ₹15/km.
 
-- **Cheapest:** shared cab to a transit hub (Angamaly KSRTC Bus Terminal, Aluva KSRTC or Aluva Metro), then KSRTC bus or metro. Not offered if anyone in the group chose Direct.
+- **Cheapest:** shared cab to a transit hub (Angamaly KSRTC for the north, Vyttila Hub for the south, Perumbavoor KSRTC for the east, Aluva Metro for Kochi), then KSRTC bus or metro. Not offered if anyone in the group chose Direct.
 - **Balanced:** riders within 4 km of each other share one stop in one of their areas and finish by auto or on foot. Riders further along the corridor get their own stop, so nobody is left with a long auto ride.
 - **Direct:** the cab drops each rider at their own address. Stops are ordered nearest-first.
 
 **Proportionate split:** the pickup fee and base fare are shared equally. Each stretch of road is split only among the riders still in the cab, so someone getting off at Chalakudy pays less than someone going to Thrissur. Each rider's own onward fare is added to their share. Savings are measured against a solo door-to-door cab.
 
 ### Coordination
-- Proposed departure = latest arrival in the group + 30 min. The waiting deadline is 10 min after that.
+- The pickup window is always **30 minutes**. It starts when the first rider taps **I've landed** (`ride_groups.pickup_window_started_at`).
+- The meet page shows the countdown, a schematic airport map with each rider placed by their status (in the air → arrival gate → baggage hall → walkway → pickup), and one-tap "what are you doing now" updates. Riders can report a flight delay before landing.
 - The countdown is always worked out from the **stored** `waiting_deadline` timestamp, so a reload doesn't reset it.
 - When 2 minutes are left, the app shows an in-app alert **once per deadline** and calls `navigator.vibrate()` once. The app records whether the browser vibrated, blocked the vibration or doesn't support it, and the alert says which one happened. Extending the deadline sets up a new reminder.
-- Each status update is one tap. "I'm delayed" offers +10/20/30 min. Anyone in the ride can push departure back to cover a delay. All changes are logged in a short updates feed.
+- When time's up, the group chooses **Leave with who's here** or **Wait 10 more min**. Testing tools appear when you add `?tools=1` to the meet page URL.
 
 ## Project structure
 
@@ -129,12 +129,12 @@ scripts/live-check.mjs  manual real-provider check
 
 ```
 src/
-  components/   SiteLayout (utility bar, header, nav, footer), ui (Button, Field, Tag, Note,
-                PageHeading, JourneySteps), PassengerCard, OptionCard, RideStatus,
-                Countdown (useNow, useDeadlineReminder, ReminderBanner), LiveInviteCheck
-  pages/        ArrivalSetup, MatchResults, RideComparison, RideConfirmation, RideCoordination
+  components/   SiteLayout, ui (Button, Field, Tag, Note, PageHeading), Avatar, DestinationPicker,
+                AirportMap, Countdown (useNow, useDeadlineReminder, ReminderBanner), LiveInviteCheck,
+                ArrivalsBoardView
+  pages/        ArrivalSetup (/), Arrivals (/arrivals), MatchProposal (/match), RideCoordination (/ride)
   services/     supabaseClient, tripService, rideService, storage
-  data/         airports (airports, zones, destinations), demoPassengers, config
+  data/         airports (14 districts, their roads from COK, places, hubs), demoPassengers, config
   state/        AppState (shared, persisted journey state)
   utils/        matching, fareCalculation, geo, trip, validation, timeFormatting, notifications
   App.jsx, main.jsx, styles.css (design system)
@@ -142,28 +142,23 @@ supabase/schema.sql
 .env.example, vercel.json
 ```
 
-## Demo script for judges (about 3 minutes)
+## Walkthrough (about 3 minutes, two phones)
 
-1. **Home:** tap **Find travellers on my route** on the empty form to show validation. Then tap **Try a demo trip** (Aditi, COK → Thrissur Swaraj Round, 2 bags, Balanced, up to 25 min detour) and **Find travellers on my route**.
-2. **Matches:** Joseph, Arjun, Rohan, Ananya, Meera and Priya appear, ranked, each with reasons. For example, *"Chalakudy is on your way"* is a route-overlap match. Open **Not matched** to see the rejections: Kabir (95 min apart), Farah (Kakkanad is off your route), Vikram (7 bags together) and others.
-3. Add **Meera**, then point out that Rohan is now blocked: *Meera wants Direct and Rohan wants Cheapest*. Add **Ananya** and tap **Compare fare options**.
-4. **Compare:** Cheapest is unavailable because Meera asked for a door-to-door drop. Balanced and Direct show your share, duration, detour, transfers and savings. Open **View cab route in Google Maps**. Continue with Balanced, and point out on the confirm page that each person's share is different.
-5. **Confirm:** review the summary and the "proposal, not a booking" note. Tap **Confirm I'm in**; double taps are ignored.
-6. **After landing:** tap **I've landed · collecting luggage**, then **I'm walking to pickup**. **Reload the page** to show that status and countdown persist.
-7. Open **Testing tools** and tap **Deadline in 2:10**. After about 10 s the reminder appears and says whether the phone vibrated. Reload: it doesn't fire again.
-8. Tap **Someone's delayed**, then **Push departure +15 min**. Tap **Deadline in 0:20**. When the window ends, tap **Leave with who's here** to finish.
-
-Tip: open the app in two tabs. Status changes in one tab show up in the other.
+1. **Phone A:** plan a ride. Choose **Thrissur**: the road from the airport appears (Angamaly → Karukutty → Koratty → Chalakudy → Pudukkad → Ollur → Thrissur), and you can be dropped anywhere along it. Tap **Find my ride**. Nobody matches yet, so the page keeps looking.
+2. **Phone B:** plan a ride landing within 30 minutes of A, to Chalakudy. Sanchari proposes a ride with A: who's riding, the route, your share, and **Compare fares** for the other options. Tap **I'm in**.
+3. **Phone A** switches to the same proposal on its own. Tap **I'm in**. Both phones open **Meet your co-passengers**.
+4. Tap **I've landed** on one phone: the 30-minute countdown starts for both, and the map moves that rider to the arrival gate. Pick **Collecting baggage**, **Walking to pickup** or **At the pickup point**. The other phone updates live.
+5. Use **Flight delayed?** on the phone that hasn't landed. Add `?tools=1` to the URL to jump the window to 0:20 and show the time's-up choice.
 
 ## Implemented
 
-Editorial design system with larger-text and high-contrast modes · arrival form with validation and persisted input · rules-based matching with explained reasons and rejections · adjustable time window · empty state (widen window / change destination / demo matches) · multi-rider groups with pairwise checks · three journey options with consistent fare maths · Maps links · double-tap-safe confirmation · persistent ride state · one-tap statuses · delays and departure shifts · updates feed · countdown from a stored timestamp · a single 2-minute reminder with an honest vibration report · testable deadlines · demo mode · Supabase live mode with RLS, RPCs and Realtime · arrivals board with freshness labels · verified or unverified flights on journeys · readiness-based matching with budgets · flight changes surfaced with consent-only departure moves · 99 automated tests.
+Editorial design system with larger-text and high-contrast modes · all 14 Kerala districts with the road from the airport and stops on the way · automatic grouping with accept or decline · compare fares across three options · 30-minute pickup window that starts on first landing · schematic airport map of where everyone is · one-tap statuses and flight-delay reporting · countdown from a stored timestamp · a single 2-minute reminder with an honest vibration report · testable deadlines · demo mode · Supabase live mode with RLS, RPCs and Realtime · arrivals board with freshness labels · verified or unverified flights on journeys · readiness-based matching with budgets · flight changes surfaced with consent-only departure moves · 111 automated tests.
 
 ## Limitations and not built
 
 - No ticket upload or OCR, no live flight tracking, no live taxi or transit prices, no routing API, no payments, no identity verification, no chat.
-- Only COK is served. Destinations come from a curated list of areas along the Aluva–Angamaly–Chalakudy–Thrissur corridor and nearby Kochi suburbs. The exact address is free text and isn't geocoded.
+- Only COK is served. Destinations are a curated list of about 90 towns across the 14 districts, with approximate coordinates. The exact address is free text and isn't geocoded.
 - Route overlap is estimated from straight-line distances, not a routing API. Driver assignment, group chat and WebSockets beyond Supabase Realtime are not built. Live flight data needs licensed Flex credentials, and no real Flex call has been verified yet (see docs/FLIGHT_DATA.md §10).
 - Reminders only work while the page is open. Browsers can't vibrate or notify from a closed or background tab, and iOS Safari has no Vibration API.
 - Live mode has passed its RLS test on local Postgres but hasn't been exercised end to end on a hosted Supabase project.
-- Demo co-passengers move forward only when you use the demo controls, so nothing about their arrival is ever assumed.
+- The airport map is a diagram driven by what riders report, not GPS.

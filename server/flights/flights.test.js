@@ -312,7 +312,7 @@ describe('demo provider', () => {
   it('serves clearly labelled sample COK arrivals', async () => {
     const r = await demo().arrivals({ date: '2026-10-11' });
     expect(r.provider).toMatchObject({ id: 'demo', isDemo: true, configured: true });
-    expect(r.provider.label).toMatch(/sample data, not real/);
+    expect(r.provider.label).toBe('Sample schedule');
     expect(r.flights.length).toBe(25);
     expect(r.flights.every((f) => f.source === 'demo' && /^\S+ 9\d{3}$/.test(f.designator))).toBe(true);
   });

@@ -62,8 +62,8 @@ export function ReminderBanner({ reminder, remaining, deadline, onDismiss }) {
       <span className="icon-box accent"><BellRing size={22} aria-hidden /></span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <p className="eyebrow" style={{ marginBottom: '0.3rem' }}>Reminder</p>
-        <h3 id="reminder-title">Waiting window ends in <span className="tabnum">{fmtCountdown(remaining)}</span></h3>
-        <p>Your shared ride’s waiting window ends at {fmtTime(deadline)}. Check everyone’s status before leaving.</p>
+        <h3 id="reminder-title"><span className="tabnum">{fmtCountdown(remaining)}</span> left to meet</h3>
+        <p>The pickup window ends at {fmtTime(deadline)}.</p>
         <span className="vib">
           {vibrated ? <Vibrate size={15} aria-hidden /> : <VibrateOff size={15} aria-hidden />}
           {vibrated

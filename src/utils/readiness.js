@@ -7,7 +7,6 @@ export const READINESS_CONFIG = {
   baggageBaseMinutes: 18, // first checked bag
   perExtraBagMinutes: 4,
   walkToPickupMinutes: 5,
-  waitAfterDepartureMinutes: 10,
 };
 
 export function baggageMinutes(bags, cfg = READINESS_CONFIG) {

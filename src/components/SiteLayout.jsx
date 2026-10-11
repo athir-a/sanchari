@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { IS_LIVE } from '../services/supabaseClient.js';
 import { useAppState } from '../state/AppState.jsx';
 import { readJSON, writeJSON } from '../services/storage.js';
 
@@ -35,11 +34,9 @@ export function SiteLayout({ children }) {
   }, [pathname]);
 
   const links = [
-    { to: '/', label: 'Plan trip', enabled: true, match: ['/'] },
+    { to: '/', label: 'Plan', enabled: true, match: ['/'] },
     { to: '/arrivals', label: 'Arrivals', enabled: true, match: ['/arrivals'] },
-    { to: '/matches', label: 'Matches', enabled: !!state.trip, match: ['/matches'], count: state.selected.length || null },
-    { to: '/compare', label: 'Fare options', enabled: !!state.trip && state.selected.length > 0, match: ['/compare', '/confirm'] },
-    { to: '/ride', label: 'Your ride', enabled: !!state.activeRideId, match: ['/ride'] },
+    { to: state.activeRideId ? '/ride' : '/match', label: 'Your ride', enabled: !!(state.activeRideId || state.trip), match: ['/match', '/ride'] },
   ];
 
   return (
@@ -48,12 +45,7 @@ export function SiteLayout({ children }) {
 
       <div className="utility-bar">
         <div className="container utility-inner">
-          <p role="status">
-            <span className={`mode-dot${IS_LIVE ? ' live' : ''}`} aria-hidden />
-            {IS_LIVE
-              ? 'Live mode · trips and rides are shared with matched travellers'
-              : 'Demo mode · co-passengers are fictional and data stays in this browser'}
-          </p>
+          <p>Shared rides from Cochin Airport to all 14 districts of Kerala</p>
           <div className="utility-controls" aria-label="Display settings">
             <button className="utility-toggle" aria-pressed={prefs.largeText} onClick={() => toggle('largeText')}>
               A+ Larger text
@@ -79,10 +71,9 @@ export function SiteLayout({ children }) {
                     {l.enabled ? (
                       <Link to={l.to} className="nav-link" aria-current={active ? 'page' : undefined}>
                         {l.label}
-                        {l.count ? <span className="nav-count" aria-label={`${l.count} selected`}>{l.count}</span> : null}
                       </Link>
                     ) : (
-                      <span className="nav-link" aria-disabled="true" title="Available after the previous step">
+                      <span className="nav-link" aria-disabled="true" title="Plan a ride first">
                         {l.label}
                       </span>
                     )}
@@ -100,8 +91,8 @@ export function SiteLayout({ children }) {
 
       <footer className="site-footer">
         <div className="container footer-inner">
-          <p>Sanchari · Shared rides from Cochin International Airport (COK) to Thrissur via Aluva, Angamaly and Chalakudy.</p>
-          <p>Fares and times are estimates, not quotes. No taxi is booked and no payment is taken.</p>
+          <p>Sanchari · Land together. Ride home together.</p>
+          <p>Fares are estimates. You book the cab together at pickup.</p>
         </div>
       </footer>
     </div>

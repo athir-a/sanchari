@@ -41,7 +41,8 @@ export function planTimes(trips) {
   const latest = Math.max(...trips.map((t) => new Date(readyAt(t)).getTime()));
   const five = 5 * 60000;
   const proposed = new Date(Math.ceil(latest / five) * five).toISOString();
-  return { proposed, deadline: addMinutes(proposed, RIDE_CONFIG.waitAfterDepartureMinutes) };
+  // Placeholder deadline until the first rider lands and the 30-minute window starts.
+  return { proposed, deadline: addMinutes(proposed, RIDE_CONFIG.pickupWindowMinutes) };
 }
 
 function memberFlight(t) {
@@ -57,11 +58,21 @@ function memberFlight(t) {
   };
 }
 
-function optionSnapshot(o) {
+/** What every rider would pay under each option, so each member can compare fares later. */
+export function compareSnapshot(options) {
+  return Object.fromEntries(options.map((o) => [o.kind, {
+    label: o.label,
+    available: o.available,
+    shares: Object.fromEntries(o.members.map((m) => [m.tripId, m.cost])),
+  }]));
+}
+
+function optionSnapshot(o, options = []) {
   return {
     kind: o.kind, label: o.label, modes: o.modes, vehicle: o.vehicle, dropArrangement: o.dropArrangement,
     stops: o.stops, mapsUrl: o.mapsUrl, perPerson: o.perPerson, durationMinutes: o.durationMinutes,
     detourMinutes: o.detourMinutes, transfers: o.transfers, savings: o.savings, soloFare: o.soloFare,
+    compare: compareSnapshot(options.length ? options : [o]),
   };
 }
 
@@ -104,6 +115,7 @@ function mapLive(group, members, updates, myTripId) {
     selectedPreference: group.selected_preference,
     estimatedTotalFare: Number(group.estimated_total_fare),
     status: group.status,
+    pickupWindowStartedAt: group.pickup_window_started_at || null,
     createdAt: group.created_at,
     option: group.route_details || null,
     members: members.map((m) => ({
@@ -149,7 +161,7 @@ async function liveUpdate(text, ride, kind = 'info') {
 
 /* ───────────────────────── Public API ───────────────────────── */
 
-export async function createRide({ me, others, option }) {
+export async function createRide({ me, others, option, options = [] }) {
   const { proposed, deadline } = planTimes([me, ...others]);
   const shares = Object.fromEntries(option.members.map((m) => [m.tripId, m.cost]));
 
@@ -165,8 +177,9 @@ export async function createRide({ me, others, option }) {
       selectedPreference: option.kind,
       estimatedTotalFare: option.totalCost,
       status: 'confirmed',
+      pickupWindowStartedAt: null,
       createdAt: new Date().toISOString(),
-      option: optionSnapshot(option),
+      option: optionSnapshot(option, options),
       members: [me, ...others].map((t, i) => ({
         id: uuid(),
         tripId: t.id,
@@ -185,7 +198,7 @@ export async function createRide({ me, others, option }) {
       })),
       updates: [],
     };
-    pushUpdate(ride, `${me.displayName} confirmed the ride. Proposed departure ${fmtTime(proposed)}.`, 'success');
+    pushUpdate(ride, `${me.displayName} is in`, 'success');
     return saveDemoRide(ride);
   }
 
@@ -197,12 +210,17 @@ export async function createRide({ me, others, option }) {
     p_proposed_departure: proposed,
     p_waiting_deadline: deadline,
     p_route_summary: option.routeSummary,
-    p_route_details: optionSnapshot(option),
+    p_route_details: optionSnapshot(option, options),
     p_selected_preference: option.kind,
     p_estimated_total_fare: option.totalCost,
     p_fare_shares: shares,
   });
-  if (error) throw new Error(`Couldn't create the ride: ${error.message}`);
+  if (error) {
+    // Someone in the group may have accepted first: join their ride instead.
+    const existing = await findRideForTrip(me.id);
+    if (existing) return confirmMembership(await liveGet(existing.id, me.id));
+    throw new Error(`Couldn't set up the ride: ${error.message}`);
+  }
   return liveGet(data, me.id);
 }
 
@@ -211,34 +229,56 @@ export async function getRide(id, myTripId) {
   return liveGet(id, myTripId);
 }
 
-/** Live mode: find a ride another traveller added this trip to. */
+/** Live mode: the open ride (proposed or confirmed) this trip belongs to, if any. */
 export async function findRideForTrip(tripId) {
   if (!IS_LIVE || !tripId) return null;
   await ensureSession();
   const { data, error } = await supabase
-    .from('ride_members').select('ride_group_id').eq('trip_id', tripId)
-    .order('updated_at', { ascending: false }).limit(1);
+    .from('ride_members')
+    .select('ride_group_id, confirmed, ride_groups!inner(status)')
+    .eq('trip_id', tripId)
+    .neq('pickup_status', 'left')
+    .in('ride_groups.status', ['proposed', 'confirmed'])
+    .order('updated_at', { ascending: false })
+    .limit(1);
   if (error) throw new Error(error.message);
-  return data?.[0]?.ride_group_id ?? null;
+  const row = data?.[0];
+  return row ? { id: row.ride_group_id, confirmed: row.confirmed, status: row.ride_groups?.status } : null;
 }
+
+const ON_GROUND = ['landed', 'collecting_luggage', 'walking', 'at_pickup'];
 
 export async function updateMyStatus(ride, status, delayMinutes = 0) {
   const me = ride.members.find((m) => m.isMe);
   const text = statusMessage(me.displayName, status, delayMinutes);
   const kind = status === 'delayed' ? 'warning' : status === 'at_pickup' ? 'success' : 'info';
+  // The 30-minute pickup window starts when the first rider is on the ground.
+  const startWindow = !ride.pickupWindowStartedAt && ON_GROUND.includes(status);
+  const startedAt = new Date().toISOString();
+  const deadline = addMinutes(startedAt, RIDE_CONFIG.pickupWindowMinutes);
   if (!IS_LIVE) {
     return mutateDemo(ride.id, (r) => {
       const m = r.members.find((x) => x.isMe);
       m.pickupStatus = status;
       m.delayMinutes = status === 'delayed' ? delayMinutes : 0;
-      m.updatedAt = new Date().toISOString();
+      m.updatedAt = startedAt;
+      if (startWindow && !r.pickupWindowStartedAt) {
+        r.pickupWindowStartedAt = startedAt;
+        r.waitingDeadline = deadline;
+      }
       pushUpdate(r, text, kind);
     });
   }
   const { error } = await supabase.from('ride_members')
-    .update({ pickup_status: status, delay_minutes: status === 'delayed' ? delayMinutes : 0, updated_at: new Date().toISOString() })
+    .update({ pickup_status: status, delay_minutes: status === 'delayed' ? delayMinutes : 0, updated_at: startedAt })
     .eq('id', me.id);
   if (error) throw new Error(`Couldn't update your status: ${error.message}`);
+  if (startWindow) {
+    // Only the first rider to land sets the window; later updates leave it alone.
+    await supabase.from('ride_groups')
+      .update({ pickup_window_started_at: startedAt, waiting_deadline: deadline })
+      .eq('id', ride.id).is('pickup_window_started_at', null);
+  }
   await liveUpdate(text, ride, kind);
   return liveGet(ride.id, me.tripId);
 }
@@ -252,21 +292,23 @@ export async function confirmMembership(ride) {
   return liveGet(ride.id, me.tripId);
 }
 
-/** Move proposed departure and deadline together (e.g. someone is delayed). */
-export async function shiftDeparture(ride, minutes) {
+/** Give the group more time: push the end of the pickup window. */
+export async function extendWindow(ride, minutes) {
   const me = ride.members.find((m) => m.isMe);
-  const proposed = addMinutes(ride.proposedDepartureTime, minutes);
-  const deadline = addMinutes(ride.waitingDeadline, minutes);
-  const text = `${me.displayName} moved departure to ${fmtTime(proposed)} (+${minutes} min)`;
+  const base = Math.max(Date.now(), new Date(ride.waitingDeadline).getTime());
+  const deadline = new Date(base + minutes * 60000).toISOString();
+  const text = `${me.displayName} gave everyone ${minutes} more min`;
   if (!IS_LIVE) {
     return mutateDemo(ride.id, (r) => {
-      r.proposedDepartureTime = proposed;
       r.waitingDeadline = deadline;
+      r.pickupWindowStartedAt = r.pickupWindowStartedAt || new Date().toISOString();
       pushUpdate(r, text, 'warning');
     });
   }
-  const { error } = await supabase.from('ride_groups').update({ proposed_departure_time: proposed, waiting_deadline: deadline }).eq('id', ride.id);
-  if (error) throw new Error(`Couldn't change the departure time: ${error.message}`);
+  const { error } = await supabase.from('ride_groups')
+    .update({ waiting_deadline: deadline, pickup_window_started_at: ride.pickupWindowStartedAt || new Date().toISOString() })
+    .eq('id', ride.id);
+  if (error) throw new Error(`Couldn't extend the window: ${error.message}`);
   await liveUpdate(text, ride, 'warning');
   return liveGet(ride.id, me.tripId);
 }
@@ -281,11 +323,12 @@ export async function setDeadlineFromNow(ride, seconds) {
     return mutateDemo(ride.id, (r) => {
       r.waitingDeadline = deadline;
       r.proposedDepartureTime = proposed;
+      r.pickupWindowStartedAt = r.pickupWindowStartedAt || new Date().toISOString();
       pushUpdate(r, text, 'info');
     });
   }
   const me = ride.members.find((m) => m.isMe);
-  const { error } = await supabase.from('ride_groups').update({ waiting_deadline: deadline, proposed_departure_time: proposed }).eq('id', ride.id);
+  const { error } = await supabase.from('ride_groups').update({ waiting_deadline: deadline, proposed_departure_time: proposed, pickup_window_started_at: ride.pickupWindowStartedAt || new Date().toISOString() }).eq('id', ride.id);
   if (error) throw new Error(error.message);
   await liveUpdate(text, ride);
   return liveGet(ride.id, me.tripId);
@@ -307,6 +350,7 @@ export async function setRideStatus(ride, status) {
   return liveGet(ride.id, me.tripId);
 }
 
+/** Decline a proposed ride, or leave a confirmed one. The server frees everyone's trip as needed. */
 export async function leaveRide(ride) {
   const me = ride.members.find((m) => m.isMe);
   if (!IS_LIVE) {
@@ -324,7 +368,7 @@ export async function leaveRide(ride) {
   return liveGet(ride.id, me.tripId);
 }
 
-/** Demo only: move the least-progressed fictional passenger one step forward. */
+/** Local mode testing helper: move the least-progressed co-rider one step forward. */
 export async function simulateProgress(ride) {
   return mutateDemo(ride.id, (r) => {
     const rank = (s) => (s === 'delayed' ? 2 : STATUS_ORDER.indexOf(s));
@@ -335,11 +379,11 @@ export async function simulateProgress(ride) {
     m.pickupStatus = STATUS_ORDER[rank(m.pickupStatus) + 1];
     m.delayMinutes = 0;
     m.updatedAt = new Date().toISOString();
-    pushUpdate(r, `${statusMessage(m.displayName, m.pickupStatus)} (demo)`, m.pickupStatus === 'at_pickup' ? 'success' : 'info');
+    pushUpdate(r, statusMessage(m.displayName, m.pickupStatus), m.pickupStatus === 'at_pickup' ? 'success' : 'info');
   });
 }
 
-/** Demo only: a fictional passenger reports a delay. */
+/** Local mode testing helper: a co-rider reports a delay. */
 export async function simulateDelay(ride) {
   return mutateDemo(ride.id, (r) => {
     const m = r.members.find((x) => !x.isMe && !['at_pickup', 'departed', 'left', 'delayed'].includes(x.pickupStatus));
@@ -347,7 +391,7 @@ export async function simulateDelay(ride) {
     m.pickupStatus = 'delayed';
     m.delayMinutes = 15;
     m.updatedAt = new Date().toISOString();
-    pushUpdate(r, `${statusMessage(m.displayName, 'delayed', 15)} (demo)`, 'warning');
+    pushUpdate(r, statusMessage(m.displayName, 'delayed', 15), 'warning');
   });
 }
 

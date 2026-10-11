@@ -84,11 +84,11 @@ export async function saveTrip(trip, existingId) {
 
 /**
  * Candidate trips near the user's arrival.
- * Demo: fictional passengers placed around your arrival time.
- * Live: other travellers' trips via a privacy-limited RPC (no street addresses).
+ * Local mode: fictional travellers placed around your arrival time.
+ * With a database: other travellers' trips via a privacy-limited RPC (no street addresses).
  */
 export async function getCandidateTrips(trip, windowMinutes) {
-  if (!IS_LIVE) return buildDemoCandidates(trip.arrivalTime);
+  if (!IS_LIVE) return buildDemoCandidates(trip.arrivalTime, trip);
   await ensureSession();
   const t = new Date(effectiveArrival(trip).time).getTime();
   // Pad beyond the matching window: readiness also depends on bags and live estimates.

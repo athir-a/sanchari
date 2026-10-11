@@ -69,22 +69,3 @@ export function useDocumentTitle(title) {
     document.title = `${title} | Sanchari`;
   }, [title]);
 }
-
-const STEPS = ['Plan your arrival', 'Choose co-passengers', 'Compare fares', 'Confirm the ride'];
-
-/** Journey strip showing where the user is in the booking flow. */
-export function JourneySteps({ current }) {
-  return (
-    <ol className="journey-strip four steps-progress" aria-label="Journey progress">
-      {STEPS.map((s, i) => {
-        const state = i < current ? 'is-done' : i === current ? 'is-current' : 'is-upcoming';
-        return (
-          <li key={s} className={state} aria-current={i === current ? 'step' : undefined}>
-            <b>{String(i + 1).padStart(2, '0')}</b> {s}
-            {i < current && <span className="sr-only"> (done)</span>}
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
