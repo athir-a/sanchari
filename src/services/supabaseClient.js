@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-const url = import.meta.env.VITE_SUPABASE_URL;
+// Accept common copy-paste variants ("…supabase.co/", "…supabase.co/rest/v1/") — the client needs the bare project URL.
+const url = (import.meta.env.VITE_SUPABASE_URL || '').trim().replace(/\/+$/, '').replace(/\/(rest|auth)\/v1$/, '');
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 /** Live mode only when both public Supabase values are configured. */

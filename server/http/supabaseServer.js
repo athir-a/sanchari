@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 
-const url = () => process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+const url = () => (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim().replace(/\/+$/, '').replace(/\/(rest|auth)\/v1$/, '');
 const anon = () => process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 
 export const supabaseConfigured = () => Boolean(url() && anon());
